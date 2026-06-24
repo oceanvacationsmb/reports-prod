@@ -92,7 +92,7 @@ export default function LoginPage() {
           <span>Ocean Vacations</span>
           <h1>{title}</h1>
         </div>
-        <form className="stack-form" onSubmit={submit}>
+        <form className="stack-form" onSubmit={submit} noValidate>
           {mode !== "setPassword" && (
             <label>
               Email or username
