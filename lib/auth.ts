@@ -101,9 +101,12 @@ export function assertOwnerAccess(user: SessionUser, ownerId?: string | null) {
   }
 }
 
-export async function loadSessionUserByEmail(email: string, password: string) {
+export async function loadSessionUserByIdentifier(identifier: string, password: string) {
   await connectDb();
-  const user = await User.findOne({ email: email.toLowerCase().trim() }).lean();
+  const normalized = identifier.toLowerCase().trim();
+  const user = await User.findOne({
+    $or: [{ email: normalized }, { username: normalized }]
+  }).lean();
   if (!user) return null;
   const ok = await verifyPassword(password, user.passwordHash);
   if (!ok) return null;

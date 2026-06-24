@@ -60,10 +60,13 @@ const taxFlagsSchema = new Schema(
 const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    username: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: ["admin", "owner"], required: true },
     ownerId: { type: Schema.Types.ObjectId, ref: "Owner", default: null },
     displayName: { type: String, default: "" },
+    resetPasswordTokenHash: { type: String, default: "" },
+    resetPasswordExpiresAt: { type: Date, default: null },
     createdAt: { type: Date, default: Date.now }
   },
   { versionKey: false }
