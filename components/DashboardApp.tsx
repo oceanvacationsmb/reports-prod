@@ -1337,9 +1337,19 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   Invoice link
                   <input value={expenseForm.invoiceUrl} onChange={(event) => setExpenseForm({ ...expenseForm, invoiceUrl: event.target.value })} />
                 </label>
+                {expenseEditingId && expenseForm.invoiceUrl && (
+                  <div className="inline-actions">
+                    <button className="secondary-action small" type="button" onClick={() => setInvoiceUrl(expenseForm.invoiceUrl)}>
+                      View current invoice
+                    </button>
+                    <button className="secondary-action small danger-text" type="button" onClick={() => setExpenseForm({ ...expenseForm, invoiceUrl: "" })}>
+                      Remove invoice
+                    </button>
+                  </div>
+                )}
                 <label className="file-pick">
                   <Upload size={18} />
-                  <span>{expenseFile ? expenseFile.name : "Upload invoice"}</span>
+                  <span>{expenseFile ? expenseFile.name : expenseEditingId ? "Replace invoice PDF/JPG" : "Upload invoice PDF/JPG"}</span>
                   <input type="file" accept="image/*,application/pdf" onChange={(event) => setExpenseFile(event.target.files?.[0] || null)} />
                 </label>
                 <button className="primary-action" disabled={busy === "expense"}>

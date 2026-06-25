@@ -248,6 +248,16 @@ textarea:focus {
   font-size: 0.86rem;
 }
 
+.inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.danger-text {
+  color: #9c2d20;
+}
+
 .text-action {
   min-height: 0;
   width: fit-content;

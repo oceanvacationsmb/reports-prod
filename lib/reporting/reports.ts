@@ -57,6 +57,17 @@ function escapeHtml(value: unknown) {
     .replaceAll('"', "&quot;");
 }
 
+function safeHttpUrl(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 function parseDate(value?: string) {
   if (!value) return null;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -682,6 +693,7 @@ function expensesTable(expenses: ExpenseLike[], title = "Expenses") {
   const body = expenses
     .map((expense) => {
       const kind = String(expense._id || "").includes(":") ? "recurring" : "expense";
+      const invoiceUrl = safeHttpUrl(expense.invoiceUrl);
       return `
       <tr>
         <td>${escapeHtml(expense.property)}</td>
@@ -689,7 +701,7 @@ function expensesTable(expenses: ExpenseLike[], title = "Expenses") {
         <td>${escapeHtml(expense.vendor || "")}</td>
         <td>${formatMoney(Number(expense.amount || 0))}</td>
         <td>${escapeHtml(`${expense.month}/${expense.year}`)}</td>
-        <td>${expense.invoiceUrl ? `<a href="${escapeHtml(expense.invoiceUrl)}">Invoice</a>` : ""}</td>
+        <td>${invoiceUrl ? `<a href="${escapeHtml(invoiceUrl)}" target="_blank" rel="noreferrer">Invoice</a>` : ""}</td>
         ${editActions(kind, expense._id)}
       </tr>`
     })

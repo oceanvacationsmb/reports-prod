@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     const dataUri = `data:${file.type || "application/octet-stream"};base64,${bytes.toString("base64")}`;
     const upload = await cloudinary.uploader.upload(dataUri, {
       folder: "ocean-vacations/invoices",
-      resource_type: "auto",
+      resource_type: file.type === "application/pdf" ? "raw" : "image",
       use_filename: true,
       unique_filename: true
     });
