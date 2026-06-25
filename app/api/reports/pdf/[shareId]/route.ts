@@ -5,6 +5,7 @@ import path from "path";
 import { promisify } from "util";
 import { connectDb } from "@/lib/db";
 import { SavedReport } from "@/lib/models";
+import { stripReportEditControls } from "@/lib/reporting/sanitize";
 
 export const runtime = "nodejs";
 
@@ -197,7 +198,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ shareId
     const savedReport = await SavedReport.findOne({ shareId }).lean();
     if (!savedReport) return new Response("Saved report not found.", { status: 404 });
 
-    const pdf = await renderPdf(savedReport.htmlSnapshot, savedReport.reportTitle);
+    const pdf = await renderPdf(stripReportEditControls(savedReport.htmlSnapshot), savedReport.reportTitle);
     const filename = `${String(savedReport.reportTitle || "ocean-vacations-report").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}.pdf`;
 
     return new Response(pdf, {

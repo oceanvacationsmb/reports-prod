@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { connectDb } from "@/lib/db";
 import { SavedReport } from "@/lib/models";
 import { asPlain } from "@/lib/http";
+import { stripReportEditControls } from "@/lib/reporting/sanitize";
 
 export default async function SharedReportPage({ params }: { params: Promise<{ shareId: string }> }) {
   const { shareId } = await params;
@@ -18,7 +19,7 @@ export default async function SharedReportPage({ params }: { params: Promise<{ s
         </div>
         <p>{savedReport.periodLabel}</p>
       </div>
-      <section className="report-preview" dangerouslySetInnerHTML={{ __html: savedReport.htmlSnapshot }} />
+      <section className="report-preview" dangerouslySetInnerHTML={{ __html: stripReportEditControls(savedReport.htmlSnapshot) }} />
     </main>
   );
 }
