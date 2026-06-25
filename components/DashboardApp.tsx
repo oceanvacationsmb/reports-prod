@@ -1378,38 +1378,40 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               </form>
             )}
 
-            <div className="list-panel wide">
-              {ownerExpenses.map((expense) => (
-                <article className="expense-row" key={expense._id}>
-                  <div>
-                    <span>{expense.property}</span>
-                    <h3>{expense.type}</h3>
-                    <p>
-                      {expense.vendor || "No vendor"} · {expense.month}/{expense.year}
-                    </p>
-                  </div>
-                  <strong>{money(expense.amount)}</strong>
-                  <div className="card-actions">
-                    {expense.invoiceUrl && (
-                      <button className="secondary-action small" onClick={() => openInvoice(expense.invoiceUrl)}>
-                        Invoice
-                      </button>
-                    )}
-                    {isAdmin && (
-                      <button className="icon-button" onClick={() => editExpense(expense)} title="Edit expense">
-                        <Eye size={17} />
-                      </button>
-                    )}
-                    {isAdmin && (
-                      <button className="icon-button danger" onClick={() => deleteExpense(expense._id)} title="Delete expense">
-                        <Trash2 size={17} />
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
-              {ownerExpenses.length === 0 && <p className="empty-state">No expenses yet.</p>}
-            </div>
+            {!expenseEditingId && (
+              <div className="list-panel wide">
+                {ownerExpenses.map((expense) => (
+                  <article className="expense-row" key={expense._id}>
+                    <div>
+                      <span>{expense.property}</span>
+                      <h3>{expense.type}</h3>
+                      <p>
+                        {expense.vendor || "No vendor"} · {expense.month}/{expense.year}
+                      </p>
+                    </div>
+                    <strong>{money(expense.amount)}</strong>
+                    <div className="card-actions">
+                      {expense.invoiceUrl && (
+                        <button className="secondary-action small" onClick={() => openInvoice(expense.invoiceUrl)}>
+                          Invoice
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button className="icon-button" onClick={() => editExpense(expense)} title="Edit expense">
+                          <Eye size={17} />
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button className="icon-button danger" onClick={() => deleteExpense(expense._id)} title="Delete expense">
+                          <Trash2 size={17} />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+                {ownerExpenses.length === 0 && <p className="empty-state">No expenses yet.</p>}
+              </div>
+            )}
           </section>
         )}
 

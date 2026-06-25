@@ -25,11 +25,12 @@ export async function POST(req: NextRequest) {
       throw Object.assign(new Error("Invoice file is required."), { status: 400 });
     }
 
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     const bytes = Buffer.from(await file.arrayBuffer());
     const dataUri = `data:${file.type || "application/octet-stream"};base64,${bytes.toString("base64")}`;
     const upload = await cloudinary.uploader.upload(dataUri, {
       folder: "ocean-vacations/invoices",
-      resource_type: file.type === "application/pdf" ? "raw" : "image",
+      resource_type: isPdf ? "raw" : "image",
       use_filename: true,
       unique_filename: true
     });
