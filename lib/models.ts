@@ -82,6 +82,7 @@ const ownerSchema = new Schema(
     splitOwnerPercent: { type: Number, default: 0 },
     cleaningFee: { type: Number, default: 0 },
     cleaningCaps: { type: [cleaningCapSchema], default: [] },
+    taxFlags: { type: taxFlagsSchema, default: () => ({}) },
     guestyReportUrl: { type: String, default: "" },
     guestyAllPropertiesUrl: { type: String, default: "" },
     properties: { type: [String], default: [] },

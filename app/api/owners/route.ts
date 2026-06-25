@@ -6,6 +6,15 @@ import { Owner, User } from "@/lib/models";
 import { asPlain, fail, ok } from "@/lib/http";
 
 const charge = z.object({ label: z.string(), amount: z.coerce.number() });
+const taxFlags = z.object({
+  SC: z.boolean().optional(),
+  MB: z.boolean().optional(),
+  NMB: z.boolean().optional(),
+  SSB: z.boolean().optional(),
+  HC: z.boolean().optional(),
+  GTC: z.boolean().optional()
+}).default({});
+
 const ownerSchema = z.object({
   name: z.string().min(1),
   email: z.string().optional().default(""),
@@ -15,6 +24,7 @@ const ownerSchema = z.object({
   splitOwnerPercent: z.coerce.number().default(0),
   cleaningFee: z.coerce.number().default(0),
   cleaningCaps: z.array(z.object({ property: z.string().optional(), maxAmount: z.coerce.number() })).default([]),
+  taxFlags,
   guestyReportUrl: z.string().optional().default(""),
   guestyAllPropertiesUrl: z.string().optional().default(""),
   properties: z.array(z.string()).default([]),

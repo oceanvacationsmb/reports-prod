@@ -45,6 +45,7 @@ export type OwnerLike = {
   splitOwnerPercent?: number;
   cleaningFee?: number;
   cleaningCaps?: CleaningCap[];
+  taxFlags?: Record<string, boolean>;
   guestyReportUrl?: string;
   guestyAllPropertiesUrl?: string;
   properties?: string[];

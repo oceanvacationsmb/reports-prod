@@ -517,6 +517,10 @@ textarea:focus {
   align-items: start;
 }
 
+.split-view.single-view {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .editor-panel {
   background: rgba(255, 253, 250, 0.9);
   border: 1px solid var(--line);
@@ -555,6 +559,12 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(248, 245, 239, 0.58);
+}
+
+.muted-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .panel-heading.small {

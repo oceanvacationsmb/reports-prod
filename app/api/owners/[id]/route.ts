@@ -5,6 +5,15 @@ import { connectDb } from "@/lib/db";
 import { Owner, User } from "@/lib/models";
 import { asPlain, fail, ok } from "@/lib/http";
 
+const taxFlags = z.object({
+  SC: z.boolean().optional(),
+  MB: z.boolean().optional(),
+  NMB: z.boolean().optional(),
+  SSB: z.boolean().optional(),
+  HC: z.boolean().optional(),
+  GTC: z.boolean().optional()
+});
+
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().optional(),
@@ -14,6 +23,7 @@ const patchSchema = z.object({
   splitOwnerPercent: z.coerce.number().optional(),
   cleaningFee: z.coerce.number().optional(),
   cleaningCaps: z.array(z.object({ property: z.string().optional(), maxAmount: z.coerce.number() })).optional(),
+  taxFlags: taxFlags.optional(),
   guestyReportUrl: z.string().optional(),
   guestyAllPropertiesUrl: z.string().optional(),
   properties: z.array(z.string()).optional(),

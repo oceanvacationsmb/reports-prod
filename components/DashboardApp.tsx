@@ -35,6 +35,7 @@ type Owner = {
   salesFeePercent?: number;
   cleaningFee?: number;
   cleaningCaps?: unknown[];
+  taxFlags?: Record<string, boolean>;
   guestyReportUrl?: string;
   guestyAllPropertiesUrl?: string;
   properties?: string[];
@@ -191,8 +192,20 @@ const emptyOwnerForm = {
   monthlyRecurringCharges: "[]",
   specificDateRecurringCharges: "[]",
   dateRangeRecurringCharges: "[]",
-  cleaningCaps: "[]"
+  cleaningCaps: "[]",
+  taxFlags: new Set<string>()
 };
+
+function freshOwnerForm() {
+  return { ...emptyOwnerForm, taxFlags: new Set<string>() };
+}
+
+type OwnerArrayField =
+  | "recurringCharges"
+  | "monthlyRecurringCharges"
+  | "specificDateRecurringCharges"
+  | "dateRangeRecurringCharges"
+  | "cleaningCaps";
 
 const emptyPropertyForm = {
   name: "",
@@ -208,6 +221,7 @@ const emptyVendorForm = {
 
 const currentYear = new Date().getFullYear();
 const reportYearOptions = [currentYear - 1, currentYear, currentYear + 1];
+const ownerTaxFlagOptions = ["SC", "HC", "GTC", "NMB", "MB"];
 const emptyExpenseForm = {
   property: "",
   type: "",
@@ -234,7 +248,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [expenseEditingId, setExpenseEditingId] = useState("");
   const [propertyEditingId, setPropertyEditingId] = useState("");
   const [vendorEditingId, setVendorEditingId] = useState("");
-  const [ownerForm, setOwnerForm] = useState(emptyOwnerForm);
+  const [ownerForm, setOwnerForm] = useState(freshOwnerForm);
   const [expenseFile, setExpenseFile] = useState<File | null>(null);
   const [expenseForm, setExpenseForm] = useState(emptyExpenseForm);
   const [reportForm, setReportForm] = useState({
@@ -322,6 +336,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (tab !== "owners" || !selectedOwner?._id || ownerEditingId === selectedOwner._id) return;
+    setOwnerEditingId(selectedOwner._id);
+    setOwnerForm(ownerToForm(selectedOwner));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, selectedOwner?._id]);
+
   function flash(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2600);
@@ -332,9 +353,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     window.location.href = "/login";
   }
 
-  function editOwner(owner: Owner) {
-    setOwnerEditingId(owner._id);
-    setOwnerForm({
+  function ownerToForm(owner: Owner) {
+    return {
       name: owner.name || "",
       email: owner.email || "",
       type: owner.type || "draft",
@@ -350,8 +370,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       monthlyRecurringCharges: stringify(owner.monthlyRecurringCharges),
       specificDateRecurringCharges: stringify(owner.specificDateRecurringCharges),
       dateRangeRecurringCharges: stringify(owner.dateRangeRecurringCharges),
-      cleaningCaps: stringify(owner.cleaningCaps)
-    });
+      cleaningCaps: stringify(owner.cleaningCaps),
+      taxFlags: new Set(Object.entries(owner.taxFlags || {}).filter(([, enabled]) => enabled).map(([flag]) => flag))
+    };
+  }
+
+  function editOwner(owner: Owner) {
+    setOwnerEditingId(owner._id);
+    setOwnerForm(ownerToForm(owner));
     setTab("owners");
   }
 
@@ -360,6 +386,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     setBusy("owner");
     setError("");
     try {
+      const taxFlags = Object.fromEntries(Array.from(ownerForm.taxFlags).map((flag) => [flag, true]));
       const body = {
         name: ownerForm.name,
         email: ownerForm.email,
@@ -376,14 +403,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         monthlyRecurringCharges: parseArray(ownerForm.monthlyRecurringCharges, "Monthly recurring charges"),
         specificDateRecurringCharges: parseArray(ownerForm.specificDateRecurringCharges, "Specific date recurring charges"),
         dateRangeRecurringCharges: parseArray(ownerForm.dateRangeRecurringCharges, "Date range recurring charges"),
-        cleaningCaps: parseArray(ownerForm.cleaningCaps, "Cleaning caps")
+        cleaningCaps: parseArray(ownerForm.cleaningCaps, "Cleaning caps"),
+        taxFlags: ownerForm.type === "payout" ? taxFlags : {}
       };
       await api(ownerEditingId ? `/api/owners/${ownerEditingId}` : "/api/owners", {
         method: ownerEditingId ? "PATCH" : "POST",
         body: JSON.stringify(body)
       });
-      setOwnerForm(emptyOwnerForm);
-      setOwnerEditingId("");
       await loadData();
       flash("Owner saved.");
     } catch (err) {
@@ -408,7 +434,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   }
 
   function updateArrayField<T extends Record<string, unknown>>(
-    key: keyof typeof ownerForm,
+    key: OwnerArrayField,
     index: number,
     field: keyof T,
     value: string
@@ -418,11 +444,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     setOwnerForm({ ...ownerForm, [key]: stringify(rows) });
   }
 
-  function addArrayRow<T extends Record<string, unknown>>(key: keyof typeof ownerForm, row: T) {
+  function addArrayRow<T extends Record<string, unknown>>(key: OwnerArrayField, row: T) {
     setOwnerForm({ ...ownerForm, [key]: stringify([...parseFormArray<T>(ownerForm[key]), row]) });
   }
 
-  function removeArrayRow<T>(key: keyof typeof ownerForm, index: number) {
+  function removeArrayRow<T>(key: OwnerArrayField, index: number) {
     setOwnerForm({ ...ownerForm, [key]: stringify(parseFormArray<T>(ownerForm[key]).filter((_, rowIndex) => rowIndex !== index)) });
   }
 
@@ -1092,11 +1118,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         )}
 
         {tab === "owners" && isAdmin && (
-          <section className="split-view">
+          <section className="split-view single-view">
             <form className="editor-panel" onSubmit={saveOwner}>
               <div className="panel-heading">
                 <SlidersHorizontal size={20} />
-                <h2>{ownerEditingId ? "Edit Owner" : "Add Owner"}</h2>
+                <h2>{selectedOwner?.name || "Owner"} Settings</h2>
               </div>
               <div className="form-grid">
                 <label>
@@ -1132,6 +1158,32 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   <input value={ownerForm.cleaningFee} onChange={(event) => setOwnerForm({ ...ownerForm, cleaningFee: event.target.value })} inputMode="decimal" />
                 </label>
               </div>
+              {ownerForm.type === "payout" && (
+                <div className="fee-editor owner-tax-settings">
+                  <div className="panel-heading small">
+                    <MapPinned size={18} />
+                    <h3>Property taxes</h3>
+                  </div>
+                  <p className="muted-copy">Set the tax groups used for this payout owner when a property does not have its own tax setting.</p>
+                  <div className="flag-row">
+                    {ownerTaxFlagOptions.map((flag) => (
+                      <label key={flag}>
+                        <input
+                          type="checkbox"
+                          checked={ownerForm.taxFlags.has(flag)}
+                          onChange={(event) => {
+                            const next = new Set(ownerForm.taxFlags);
+                            if (event.target.checked) next.add(flag);
+                            else next.delete(flag);
+                            setOwnerForm({ ...ownerForm, taxFlags: next });
+                          }}
+                        />
+                        {flag}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <label>
                 Guesty report URL
                 <input value={ownerForm.guestyReportUrl} onChange={(event) => setOwnerForm({ ...ownerForm, guestyReportUrl: event.target.value })} />
@@ -1264,42 +1316,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   <Save size={18} />
                   Save owner
                 </button>
-                {ownerEditingId && (
-                  <button className="secondary-action" type="button" onClick={() => { setOwnerEditingId(""); setOwnerForm(emptyOwnerForm); }}>
-                    Clear
-                  </button>
-                )}
               </div>
             </form>
-
-            <div className="list-panel">
-              {visibleOwners.map((owner) => (
-                <article className="owner-card" key={owner._id}>
-                  <div>
-                    <span>{owner.type}</span>
-                    <h3>{owner.name}</h3>
-                    <p>{owner.email || "No email"}</p>
-                    <div className="owner-properties">
-                      {(owner.properties || []).length ? (
-                        (owner.properties || []).slice(0, 6).map((property) => <span key={property}>{property}</span>)
-                      ) : (
-                        <span>No Guesty properties</span>
-                      )}
-                      {(owner.properties || []).length > 6 && <span>+{(owner.properties || []).length - 6} more</span>}
-                    </div>
-                    {owner.legacyImport?.warning && <p className="owner-warning">{owner.legacyImport.warning}</p>}
-                  </div>
-                  <div className="card-actions">
-                    <button className="icon-button" onClick={() => editOwner(owner)} title="Edit owner">
-                      <Eye size={17} />
-                    </button>
-                    <button className="icon-button danger" onClick={() => deleteOwner(owner._id)} title="Delete owner">
-                      <Trash2 size={17} />
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
           </section>
         )}
 

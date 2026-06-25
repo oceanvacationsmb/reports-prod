@@ -258,12 +258,12 @@ function isTaxReportableReservation(row: CalculatedReservation) {
 }
 
 function taxReportingTotal(owner: OwnerLike, rows: CalculatedReservation[]) {
-  if (owner.type === "draft") return 0;
+  if (owner.type !== "payout") return 0;
   return rows.reduce((sum, row) => (isTaxReportableReservation(row) ? sum + row.taxes : sum), 0);
 }
 
 function amountToReportTotal(owner: OwnerLike, rows: CalculatedReservation[]) {
-  if (owner.type === "draft") return 0;
+  if (owner.type !== "payout") return 0;
   return rows.reduce((sum, row) => (isTaxReportableReservation(row) ? sum + row.netAccommodation : sum), 0);
 }
 
@@ -279,10 +279,13 @@ function taxFlagLabel(flag: string) {
   return labels[flag] || flag;
 }
 
-function taxDestination(propertyName: string, properties: PropertyLike[]) {
+function taxDestination(propertyName: string, properties: PropertyLike[], owner: OwnerLike) {
   const property = properties.find((item) => item.name.trim().toLowerCase() === propertyName.trim().toLowerCase());
   if (property?.municipality?.trim()) return property.municipality.trim();
-  const flags = Object.entries(property?.taxFlags || {})
+  const propertyFlags = property?.taxFlags || {};
+  const hasPropertyFlags = Object.values(propertyFlags).some(Boolean);
+  const flagsSource = hasPropertyFlags ? propertyFlags : owner.type === "payout" ? owner.taxFlags || {} : {};
+  const flags = Object.entries(flagsSource)
     .filter(([, enabled]) => enabled)
     .map(([flag]) => taxFlagLabel(flag));
   return flags.length ? flags.join(", ") : "Set in property settings";
@@ -294,7 +297,7 @@ function propertyReportAddress(propertyName: string, properties: PropertyLike[])
 }
 
 function reportTaxRows(owner: OwnerLike, rows: CalculatedReservation[], properties: PropertyLike[]) {
-  if (owner.type === "draft") return [];
+  if (owner.type !== "payout") return [];
   const grouped = new Map<string, { property: string; amountToReport: number; totalTax: number }>();
 
   for (const row of rows) {
@@ -308,7 +311,7 @@ function reportTaxRows(owner: OwnerLike, rows: CalculatedReservation[], properti
 
   return Array.from(grouped.values())
     .sort((a, b) => a.property.localeCompare(b.property))
-    .map((row) => ({ ...row, destination: taxDestination(row.property, properties) }));
+    .map((row) => ({ ...row, destination: taxDestination(row.property, properties, owner) }));
 }
 
 function line(label: string, value: number, options: { strong?: boolean; negative?: boolean } = {}) {
