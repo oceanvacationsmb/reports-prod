@@ -11,7 +11,6 @@ import {
   LogOut,
   MapPinned,
   Plus,
-  RefreshCw,
   Save,
   Settings,
   SlidersHorizontal,
@@ -952,9 +951,6 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 ))}
               </select>
             )}
-            <button className="icon-button" onClick={loadData} title="Refresh data">
-              <RefreshCw size={18} />
-            </button>
           </div>
         </header>
 
