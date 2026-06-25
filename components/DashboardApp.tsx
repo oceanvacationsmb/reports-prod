@@ -64,6 +64,8 @@ type Expense = {
 
 type SavedReport = {
   _id: string;
+  ownerId?: string | null;
+  reportKey?: string;
   reportTitle: string;
   periodLabel: string;
   shareId: string;
@@ -272,6 +274,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const reportPropertyOptions = useMemo(
     () => Array.from(new Set((selectedOwner?.properties || []).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
     [selectedOwner]
+  );
+  const ownerSavedReports = useMemo(
+    () => savedReports.filter((report) => String(report.ownerId || "") === String(selectedOwner?._id || "")),
+    [savedReports, selectedOwner]
   );
 
   const tabs = [
@@ -1390,7 +1396,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         {tab === "saved" && (
           <section className="view-band">
             <div className="saved-grid">
-              {savedReports.map((report) => (
+              {ownerSavedReports.map((report) => (
                 <article className="saved-card" key={report._id}>
                   <span>{report.periodLabel}</span>
                   <h3>{report.reportTitle}</h3>
@@ -1412,7 +1418,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   </div>
                 </article>
               ))}
-              {savedReports.length === 0 && <p className="empty-state">Saved report snapshots will appear here.</p>}
+              {ownerSavedReports.length === 0 && (
+                <p className="empty-state">Saved reports for {selectedOwner?.name || "this owner"} will appear here.</p>
+              )}
             </div>
           </section>
         )}
