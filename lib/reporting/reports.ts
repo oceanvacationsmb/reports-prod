@@ -296,6 +296,11 @@ function propertyReportAddress(propertyName: string, properties: PropertyLike[])
   return property?.reportAddress?.trim() || propertyName;
 }
 
+function propertyOfficialAddress(propertyName: string, properties: PropertyLike[]) {
+  const property = properties.find((item) => item.name.trim().toLowerCase() === propertyName.trim().toLowerCase());
+  return property?.reportAddress?.trim() || "";
+}
+
 function reportTaxRows(owner: OwnerLike, rows: CalculatedReservation[], properties: PropertyLike[]) {
   if (owner.type !== "payout") return [];
   const grouped = new Map<string, { property: string; amountToReport: number; totalTax: number }>();
@@ -570,29 +575,30 @@ function griReservationTable(rows: CalculatedReservation[]) {
 function griReportDocument(property: string, propertyAddress: string, rows: CalculatedReservation[], year: number, periodLabel: string) {
   const grossPayout = rows.reduce((sum, row) => sum + row.grossPayout, 0);
   const reportDate = new Date().toLocaleDateString("en-US");
+  const hasOfficialAddress = Boolean(propertyAddress.trim());
+  const displayAddress = hasOfficialAddress ? propertyAddress : "Property address needed";
 
   return `
     <article class="report-document gri-document">
       <header class="report-hero">
         <p>Ocean Vacations</p>
-        <h1><span class="gri-title-address">${escapeHtml(propertyAddress)}</span><span class="gri-title-label"> GRI Report</span></h1>
+        <h1>Gross Rental Income Report</h1>
         <span>${escapeHtml(periodLabel)}</span>
         <div class="report-hero-details">
           <span>oceanvacationsmb@gmail.com</span>
           <span>843-222-6516</span>
         </div>
       </header>
-        <section class="metric-grid">
-          <div class="metric"><span>Report Date</span><strong>${escapeHtml(reportDate)}</strong></div>
-          <div class="metric"><span>Gross Payout</span><strong>${formatMoney(grossPayout)}</strong></div>
-        </section>
+      <section class="gri-property-card${hasOfficialAddress ? "" : " missing-address"}">
+        <span>Property Address</span>
+        <strong>${escapeHtml(displayAddress)}</strong>
+        ${hasOfficialAddress ? "" : `<small>Add the official report address for ${escapeHtml(property)} in Settings > Properties before sending this report.</small>`}
+      </section>
+      <section class="metric-grid">
+        <div class="metric"><span>Report Date</span><strong>${escapeHtml(reportDate)}</strong></div>
+        <div class="metric"><span>Gross Payout</span><strong>${formatMoney(grossPayout)}</strong></div>
+      </section>
       <section class="property-section">
-        <header class="property-header">
-          <div>
-            <span>Property</span>
-            <h2>${escapeHtml(propertyAddress)}</h2>
-          </div>
-        </header>
         ${griReservationTable(rows)}
       </section>
     </article>
@@ -821,9 +827,10 @@ export function buildOwnerReport(
 
   if (request.reportKey === "gri") {
     const property = request.property || rows[0]?.property || "Property";
-    const body = griReportDocument(property, propertyReportAddress(property, properties), reportRows, request.year || new Date().getUTCFullYear(), period.label);
+    const officialAddress = propertyOfficialAddress(property, properties);
+    const body = griReportDocument(property, officialAddress, reportRows, request.year || new Date().getUTCFullYear(), period.label);
     return {
-      title: `${name} GRI Report`,
+      title: officialAddress ? `${officialAddress} GRI Report` : "Gross Rental Income Report",
       periodLabel: period.label,
       summary: { grossPayout: total.grossPayout, reservations: total.reservations },
       html: body
