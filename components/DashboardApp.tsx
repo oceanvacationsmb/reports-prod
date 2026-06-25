@@ -256,7 +256,6 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const [invoiceUrl, setInvoiceUrl] = useState("");
   const [statementEdit, setStatementEdit] = useState<StatementEdit | null>(null);
   const reportPreviewRef = useRef<HTMLDivElement | null>(null);
   const propertySettingsRef = useRef<HTMLFormElement | null>(null);
@@ -484,6 +483,21 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       year: String(expense.year || currentYear)
     });
     setExpenseFile(null);
+  }
+
+  function openInvoice(url?: string) {
+    const text = String(url || "").trim();
+    if (!text) {
+      setError("No invoice link is saved for this expense.");
+      return;
+    }
+    try {
+      const parsed = new URL(text);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Invalid invoice link.");
+      window.open(parsed.toString(), "_blank", "noopener,noreferrer");
+    } catch {
+      setError("This invoice link is invalid. Edit the expense and replace the invoice.");
+    }
   }
 
   async function deleteExpense(id: string) {
@@ -1339,7 +1353,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 </label>
                 {expenseEditingId && expenseForm.invoiceUrl && (
                   <div className="inline-actions">
-                    <button className="secondary-action small" type="button" onClick={() => setInvoiceUrl(expenseForm.invoiceUrl)}>
+                    <button className="secondary-action small" type="button" onClick={() => openInvoice(expenseForm.invoiceUrl)}>
                       View current invoice
                     </button>
                     <button className="secondary-action small danger-text" type="button" onClick={() => setExpenseForm({ ...expenseForm, invoiceUrl: "" })}>
@@ -1377,7 +1391,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   <strong>{money(expense.amount)}</strong>
                   <div className="card-actions">
                     {expense.invoiceUrl && (
-                      <button className="secondary-action small" onClick={() => setInvoiceUrl(expense.invoiceUrl || "")}>
+                      <button className="secondary-action small" onClick={() => openInvoice(expense.invoiceUrl)}>
                         Invoice
                       </button>
                     )}
@@ -1589,22 +1603,6 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           <option value={vendor.name} key={vendor._id} />
         ))}
       </datalist>
-
-      {invoiceUrl && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="invoice-modal">
-            <button className="modal-close" onClick={() => setInvoiceUrl("")} aria-label="Close invoice">
-              <X size={22} />
-            </button>
-            {/\.(png|jpe?g|gif|webp)(\?|$)/i.test(invoiceUrl) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={invoiceUrl} alt="Invoice preview" />
-            ) : (
-              <iframe src={invoiceUrl} title="Invoice preview" />
-            )}
-          </div>
-        </div>
-      )}
 
       {statementEdit && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
