@@ -20,11 +20,6 @@ export default async function PrintReportPage({
   return (
     <main className="print-report-screen">
       <div className="print-toolbar">
-        <div>
-          <span>PDF report</span>
-          <h1>{savedReport.reportTitle}</h1>
-          <p>{savedReport.periodLabel}</p>
-        </div>
         <button type="button" id="print-report-button" className="primary-action">
           Download PDF
         </button>

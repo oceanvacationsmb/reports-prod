@@ -721,12 +721,6 @@ function byProperty(rows: CalculatedReservation[], owner: OwnerLike, expenses: E
       const ownerStayRows = propertyRows.filter((row) => row.isOwnerStay);
       return `
         <section class="property-section">
-          <header class="property-header">
-            <div>
-              <span>Property</span>
-              <h2>${escapeHtml(property)}</h2>
-            </div>
-          </header>
           ${guestRows.length ? `<h3 class="statement-subhead">Guest Reservations</h3>${statementReservationTable(guestRows, owner)}` : ""}
           ${ownerStayRows.length ? `<h3 class="statement-subhead">Owner Stays</h3>${ownerStayTable(ownerStayRows)}` : ""}
           ${!propertyRows.length ? '<p class="property-empty">No reservations for this property during the selected period.</p>' : ""}
