@@ -359,6 +359,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, selectedOwner?._id]);
 
+  useEffect(() => {
+    if (tab !== "expenses" || expenseEditingId) return;
+    const statementProperty = reportPropertyOptions.includes(reportForm.property) ? reportForm.property : "";
+    const nextProperty = statementProperty || (reportPropertyOptions.length === 1 ? reportPropertyOptions[0] : "OWNER");
+    setExpenseForm((current) => (current.property === nextProperty ? current : { ...current, property: nextProperty }));
+  }, [tab, selectedOwner?._id, reportForm.property, reportPropertyOptions, expenseEditingId]);
+
   function flash(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2600);
@@ -1023,6 +1030,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     .filter(
       (expense) =>
         (!selectedOwnerId || expense.ownerId === selectedOwnerId) &&
+        expense.property === expenseForm.property &&
         expense.month === Number(expenseForm.month) &&
         expense.year === Number(expenseForm.year)
     )
@@ -1410,8 +1418,15 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 </div>
                 <div className="form-grid">
                   <label>
-                    Property
-                    <input list="property-list" value={expenseForm.property} onChange={(event) => setExpenseForm({ ...expenseForm, property: event.target.value })} required />
+                    Apply expense to
+                    <select value={expenseForm.property} onChange={(event) => setExpenseForm({ ...expenseForm, property: event.target.value })} required>
+                      <option value="OWNER">Owner-level expense</option>
+                      {reportPropertyOptions.map((property) => (
+                        <option value={property} key={property}>
+                          {property}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
                     Type
@@ -1612,7 +1627,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   <div>
                     <span>Showing</span>
                     <h2>
-                      {months[Number(expenseForm.month) - 1]} {expenseForm.year}
+                      {expenseForm.property === "OWNER" ? "Owner-level" : expenseForm.property} · {months[Number(expenseForm.month) - 1]} {expenseForm.year}
                     </h2>
                   </div>
                   <strong>{ownerExpenses.length} expense{ownerExpenses.length === 1 ? "" : "s"}</strong>
@@ -1836,11 +1851,6 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         )}
       </section>
 
-      <datalist id="property-list">
-        {properties.map((property) => (
-          <option value={property.name} key={property._id} />
-        ))}
-      </datalist>
       {statementEdit && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <form className="statement-edit-modal" onSubmit={saveStatementEdit}>
