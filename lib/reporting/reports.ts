@@ -729,6 +729,39 @@ function expensesTable(expenses: ExpenseLike[], title = "Expenses", options: { i
   `;
 }
 
+function propertyStatementSummary(owner: OwnerLike, rows: CalculatedReservation[], expenses: ExpenseLike[]) {
+  const total = totals(rows, expenses);
+  const summary = owner.type === "draft"
+    ? {
+        grossPayout: total.grossPayout,
+        netAccommodation: total.netAccommodation,
+        cleaning: total.cleaning,
+        pmc: total.pmc,
+        websiteVrboFee: total.websiteVrboFee,
+        expenses: total.expenses,
+        draftDue: total.draftDue
+      }
+    : {
+        netAccommodation: total.netAccommodation,
+        pmc: total.pmc,
+        expenses: total.expenses,
+        ownerPayout: total.ownerPayout,
+        bookedNights: total.bookedNights
+      };
+
+  return `
+    <div class="property-metric-grid">
+      ${Object.entries(summary)
+        .map(([key, value]) => {
+          const label = key.replace(/([A-Z])/g, " $1").replace(/^./, (char) => char.toUpperCase());
+          const displayValue = key === "bookedNights" ? value : formatMoney(value);
+          return `<div class="property-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(displayValue)}</strong></div>`;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
 function byProperty(rows: CalculatedReservation[], owner: OwnerLike, expenses: ExpenseLike[] = []) {
   const isOwnerLevel = (expense: ExpenseLike) => ["", "owner", "recurring"].includes(lower(expense.property).trim());
   const keys = [
@@ -752,6 +785,7 @@ function byProperty(rows: CalculatedReservation[], owner: OwnerLike, expenses: E
               <h2>${escapeHtml(property)}</h2>
             </div>
           </header>
+          ${propertyStatementSummary(owner, propertyRows, propertyExpenses)}
           <h3 class="statement-subhead">Reservations</h3>
           ${statementReservationTable(guestRows, owner)}
           ${ownerStayRows.length ? `<h3 class="statement-subhead">Owner Stays</h3>${ownerStayTable(ownerStayRows)}` : ""}
