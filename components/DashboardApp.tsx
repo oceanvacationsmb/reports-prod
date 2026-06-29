@@ -1019,7 +1019,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     }
   }
 
-  const ownerExpenses = expenses.filter((expense) => !selectedOwnerId || expense.ownerId === selectedOwnerId);
+  const ownerExpenses = expenses
+    .filter(
+      (expense) =>
+        (!selectedOwnerId || expense.ownerId === selectedOwnerId) &&
+        expense.month === Number(expenseForm.month) &&
+        expense.year === Number(expenseForm.year)
+    )
+    .sort((a, b) => a.property.localeCompare(b.property) || a.type.localeCompare(b.type));
   const reportIsAdminOnly = ["summary", "allOwnersTax"].includes(reportForm.reportKey);
 
   return (
@@ -1601,6 +1608,15 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
             {!expenseEditingId && (
               <div className="list-panel wide">
+                <div className="expense-period-heading">
+                  <div>
+                    <span>Showing</span>
+                    <h2>
+                      {months[Number(expenseForm.month) - 1]} {expenseForm.year}
+                    </h2>
+                  </div>
+                  <strong>{ownerExpenses.length} expense{ownerExpenses.length === 1 ? "" : "s"}</strong>
+                </div>
                 {ownerExpenses.map((expense) => (
                   <article className="expense-row" key={expense._id}>
                     <div>
@@ -1630,7 +1646,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </div>
                   </article>
                 ))}
-                {ownerExpenses.length === 0 && <p className="empty-state">No expenses yet.</p>}
+                {ownerExpenses.length === 0 && (
+                  <p className="empty-state">
+                    No expenses for {months[Number(expenseForm.month) - 1]} {expenseForm.year}.
+                  </p>
+                )}
               </div>
             )}
           </section>

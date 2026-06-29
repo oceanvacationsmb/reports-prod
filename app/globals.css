@@ -746,6 +746,32 @@ textarea:focus {
   font-size: 1.05rem;
 }
 
+.expense-period-heading {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.expense-period-heading span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.expense-period-heading h2 {
+  margin: 3px 0 0;
+  font-size: 1.2rem;
+}
+
+.expense-period-heading > strong {
+  color: var(--jade);
+}
+
 .file-pick {
   min-height: 48px;
   border: 1px dashed var(--sea);
