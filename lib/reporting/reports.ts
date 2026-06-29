@@ -698,14 +698,16 @@ function monthly1099Table(rows: CalculatedReservation[], expenses: ExpenseLike[]
   `;
 }
 
-function expensesTable(expenses: ExpenseLike[], title = "Expenses") {
+function expensesTable(expenses: ExpenseLike[], title = "Expenses", options: { includeProperty?: boolean } = {}) {
+  const includeProperty = options.includeProperty !== false;
+  const columnCount = includeProperty ? 7 : 6;
   const body = expenses
     .map((expense) => {
       const kind = String(expense._id || "").includes(":") ? "recurring" : "expense";
       const invoiceUrl = safeHttpUrl(expense.invoiceUrl);
       return `
       <tr>
-        <td>${escapeHtml(expense.property)}</td>
+        ${includeProperty ? `<td>${escapeHtml(expense.property)}</td>` : ""}
         <td>${escapeHtml(expense.type)}</td>
         <td>${escapeHtml(expense.notes || "")}</td>
         <td>${formatMoney(Number(expense.amount || 0))}</td>
@@ -720,8 +722,8 @@ function expensesTable(expenses: ExpenseLike[], title = "Expenses") {
     <h2>${escapeHtml(title)}</h2>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Property</th><th>Type</th><th>Note</th><th>Amount</th><th>Period</th><th>Invoice</th><th>Actions</th></tr></thead>
-        <tbody>${body || `<tr><td colspan="7">No ${escapeHtml(title.toLowerCase())} found.</td></tr>`}</tbody>
+        <thead><tr>${includeProperty ? "<th>Property</th>" : ""}<th>Type</th><th>Note</th><th>Amount</th><th>Period</th><th>Invoice</th><th>Actions</th></tr></thead>
+        <tbody>${body || `<tr><td colspan="${columnCount}">No ${escapeHtml(title.toLowerCase())} found.</td></tr>`}</tbody>
       </table>
     </div>
   `;
@@ -750,10 +752,10 @@ function byProperty(rows: CalculatedReservation[], owner: OwnerLike, expenses: E
               <h2>${escapeHtml(property)}</h2>
             </div>
           </header>
-          ${guestRows.length ? `<h3 class="statement-subhead">Guest Reservations</h3>${statementReservationTable(guestRows, owner)}` : ""}
+          <h3 class="statement-subhead">Reservations</h3>
+          ${statementReservationTable(guestRows, owner)}
           ${ownerStayRows.length ? `<h3 class="statement-subhead">Owner Stays</h3>${ownerStayTable(ownerStayRows)}` : ""}
-          ${!propertyRows.length ? '<p class="property-empty">No reservations for this property during the selected period.</p>' : ""}
-          ${propertyExpenses.length ? expensesTable(propertyExpenses, "Property Expenses") : ""}
+          ${expensesTable(propertyExpenses, "Property Expenses", { includeProperty: false })}
         </section>
       `;
     })
