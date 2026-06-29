@@ -728,10 +728,11 @@ function expensesTable(expenses: ExpenseLike[], title = "Expenses") {
 }
 
 function byProperty(rows: CalculatedReservation[], owner: OwnerLike, expenses: ExpenseLike[] = []) {
+  const isOwnerLevel = (expense: ExpenseLike) => ["", "owner", "recurring"].includes(lower(expense.property).trim());
   const keys = [
     ...new Set([
       ...rows.map((row) => row.property || "Unassigned"),
-      ...expenses.filter((expense) => expense.property && expense.property !== "Recurring").map((expense) => expense.property)
+      ...expenses.filter((expense) => !isOwnerLevel(expense)).map((expense) => expense.property)
     ])
   ].sort((a, b) => a.localeCompare(b));
 
@@ -740,11 +741,19 @@ function byProperty(rows: CalculatedReservation[], owner: OwnerLike, expenses: E
       const propertyRows = rows.filter((row) => (row.property || "Unassigned") === property);
       const guestRows = propertyRows.filter((row) => !row.isOwnerStay);
       const ownerStayRows = propertyRows.filter((row) => row.isOwnerStay);
+      const propertyExpenses = expenses.filter((expense) => expense.property === property);
       return `
         <section class="property-section">
+          <header class="property-header">
+            <div>
+              <span>Property</span>
+              <h2>${escapeHtml(property)}</h2>
+            </div>
+          </header>
           ${guestRows.length ? `<h3 class="statement-subhead">Guest Reservations</h3>${statementReservationTable(guestRows, owner)}` : ""}
           ${ownerStayRows.length ? `<h3 class="statement-subhead">Owner Stays</h3>${ownerStayTable(ownerStayRows)}` : ""}
           ${!propertyRows.length ? '<p class="property-empty">No reservations for this property during the selected period.</p>' : ""}
+          ${propertyExpenses.length ? expensesTable(propertyExpenses, "Property Expenses") : ""}
         </section>
       `;
     })
@@ -857,7 +866,8 @@ export function buildOwnerReport(
     };
   }
 
-  const body = `${byProperty(reportRows, owner, filteredExpenses)}${filteredExpenses.length ? expensesTable(filteredExpenses, "Expenses") : ""}${recurring.length ? expensesTable(recurring, "Recurring Charges") : ""}`;
+  const ownerLevelExpenses = filteredExpenses.filter((expense) => ["", "owner", "recurring"].includes(lower(expense.property).trim()));
+  const body = `${byProperty(reportRows, owner, filteredExpenses)}${ownerLevelExpenses.length ? expensesTable(ownerLevelExpenses, "Owner Expenses") : ""}${recurring.length ? expensesTable(recurring, "Recurring Charges") : ""}`;
   const baseSummary: Record<string, string | number> = owner.type === "draft"
     ? {
         grossPayout: total.grossPayout,
