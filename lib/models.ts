@@ -108,6 +108,13 @@ const vendorSchema = new Schema(
   { timestamps: true, versionKey: false }
 );
 
+const expenseTypeSchema = new Schema(
+  {
+    name: { type: String, required: true, unique: true, trim: true }
+  },
+  { timestamps: true, versionKey: false }
+);
+
 const expenseSchema = new Schema(
   {
     ownerId: { type: Schema.Types.ObjectId, ref: "Owner", required: true, index: true },
@@ -186,6 +193,7 @@ const settingSchema = new Schema(
 export const User: any = models.User || mongoose.model("User", userSchema);
 export const Owner: any = models.Owner || mongoose.model("Owner", ownerSchema);
 export const Vendor: any = models.Vendor || mongoose.model("Vendor", vendorSchema);
+export const ExpenseType: any = models.ExpenseType || mongoose.model("ExpenseType", expenseTypeSchema);
 export const Expense: any = models.Expense || mongoose.model("Expense", expenseSchema);
 export const Property: any = models.Property || mongoose.model("Property", propertySchema);
 export const SavedReport: any = models.SavedReport || mongoose.model("SavedReport", savedReportSchema);

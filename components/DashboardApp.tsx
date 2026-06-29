@@ -19,6 +19,7 @@ import {
   X,
   Download,
   Mail,
+  Pencil,
   Printer,
   Send
 } from "lucide-react";
@@ -84,6 +85,11 @@ type Vendor = {
   _id: string;
   name: string;
   phone?: string;
+};
+
+type ExpenseTypeOption = {
+  _id: string;
+  name: string;
 };
 
 type StatementEdit = {
@@ -219,6 +225,10 @@ const emptyVendorForm = {
   phone: ""
 };
 
+const emptyExpenseTypeForm = {
+  name: ""
+};
+
 const currentYear = new Date().getFullYear();
 const reportYearOptions = [currentYear - 1, currentYear, currentYear + 1];
 const ownerTaxFlagOptions = ["SC", "HC", "GTC", "NMB", "MB"];
@@ -243,11 +253,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [expenseTypes, setExpenseTypes] = useState<ExpenseTypeOption[]>([]);
   const [selectedOwnerId, setSelectedOwnerId] = useState(user.ownerId || "");
   const [ownerEditingId, setOwnerEditingId] = useState("");
   const [expenseEditingId, setExpenseEditingId] = useState("");
   const [propertyEditingId, setPropertyEditingId] = useState("");
   const [vendorEditingId, setVendorEditingId] = useState("");
+  const [expenseTypeEditingId, setExpenseTypeEditingId] = useState("");
   const [ownerForm, setOwnerForm] = useState(freshOwnerForm);
   const [expenseFile, setExpenseFile] = useState<File | null>(null);
   const [expenseForm, setExpenseForm] = useState(emptyExpenseForm);
@@ -264,6 +276,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   });
   const [propertyForm, setPropertyForm] = useState(emptyPropertyForm);
   const [vendorForm, setVendorForm] = useState(emptyVendorForm);
+  const [expenseTypeForm, setExpenseTypeForm] = useState(emptyExpenseTypeForm);
+  const [manageExpenseLists, setManageExpenseLists] = useState(false);
   const [currentReport, setCurrentReport] = useState<ReportResponse | null>(null);
   const [currentSavedReport, setCurrentSavedReport] = useState<SavedReport | null>(null);
   const [emailDraft, setEmailDraft] = useState<EmailDraft | null>(null);
@@ -304,12 +318,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     setBusy("load");
     setError("");
     try {
-      const [ownerData, expenseData, savedData, propertyData, vendorData, settingsData] = await Promise.all([
+      const [ownerData, expenseData, savedData, propertyData, vendorData, expenseTypeData, settingsData] = await Promise.all([
         api<{ owners: Owner[] }>("/api/owners"),
         api<{ expenses: Expense[] }>("/api/expenses"),
         api<{ savedReports: SavedReport[] }>("/api/saved-reports"),
         api<{ properties: Property[] }>("/api/properties"),
         api<{ vendors: Vendor[] }>("/api/vendors"),
+        api<{ expenseTypes: ExpenseTypeOption[] }>("/api/expense-types"),
         api<{ settings: { guestyCacheTtlMinutes: number; defaultCleaningCaps: unknown[] } }>("/api/settings")
       ]);
       const visibleOwnerData = ownerData.owners.filter((owner) => !isAggregateOwner(owner));
@@ -318,6 +333,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       setSavedReports(savedData.savedReports);
       setProperties(propertyData.properties);
       setVendors(vendorData.vendors);
+      setExpenseTypes(expenseTypeData.expenseTypes);
       setSettingsForm({
         guestyCacheTtlMinutes: String(settingsData.settings.guestyCacheTtlMinutes || 30),
         defaultCleaningCaps: stringify(settingsData.settings.defaultCleaningCaps)
@@ -893,14 +909,16 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     event.preventDefault();
     setBusy("vendor");
     try {
-      await api(vendorEditingId ? `/api/vendors/${vendorEditingId}` : "/api/vendors", {
+      const wasEditing = Boolean(vendorEditingId);
+      const data = await api<{ vendor: Vendor }>(vendorEditingId ? `/api/vendors/${vendorEditingId}` : "/api/vendors", {
         method: vendorEditingId ? "PATCH" : "POST",
         body: JSON.stringify(vendorForm)
       });
+      if (manageExpenseLists) setExpenseForm((current) => ({ ...current, vendor: data.vendor.name }));
       setVendorEditingId("");
       setVendorForm(emptyVendorForm);
       await loadData();
-      flash(vendorEditingId ? "Vendor updated." : "Vendor saved.");
+      flash(wasEditing ? "Vendor updated." : "Vendor saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save vendor.");
     } finally {
@@ -918,7 +936,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     setBusy("vendor-delete");
     setError("");
     try {
+      const deletedVendor = vendors.find((vendor) => vendor._id === id);
       await api(`/api/vendors/${id}`, { method: "DELETE" });
+      if (deletedVendor?.name === expenseForm.vendor) setExpenseForm((current) => ({ ...current, vendor: "" }));
       if (vendorEditingId === id) {
         setVendorEditingId("");
         setVendorForm(emptyVendorForm);
@@ -927,6 +947,58 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       flash("Vendor deleted.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete vendor.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveExpenseType(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy("expense-type");
+    setError("");
+    try {
+      const wasEditing = Boolean(expenseTypeEditingId);
+      const data = await api<{ expenseType: ExpenseTypeOption }>(
+        expenseTypeEditingId ? `/api/expense-types/${expenseTypeEditingId}` : "/api/expense-types",
+        {
+          method: expenseTypeEditingId ? "PATCH" : "POST",
+          body: JSON.stringify(expenseTypeForm)
+        }
+      );
+      setExpenseForm((current) => ({ ...current, type: data.expenseType.name }));
+      setExpenseTypeEditingId("");
+      setExpenseTypeForm(emptyExpenseTypeForm);
+      await loadData();
+      flash(wasEditing ? "Expense type updated." : "Expense type saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save expense type.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function editExpenseType(expenseType: ExpenseTypeOption) {
+    setExpenseTypeEditingId(expenseType._id);
+    setExpenseTypeForm({ name: expenseType.name });
+    setManageExpenseLists(true);
+  }
+
+  async function deleteExpenseType(id: string) {
+    if (!window.confirm("Delete this expense type? Existing expenses will keep their saved type.")) return;
+    setBusy("expense-type-delete");
+    setError("");
+    try {
+      const deletedType = expenseTypes.find((expenseType) => expenseType._id === id);
+      await api(`/api/expense-types/${id}`, { method: "DELETE" });
+      if (deletedType?.name === expenseForm.type) setExpenseForm((current) => ({ ...current, type: "" }));
+      if (expenseTypeEditingId === id) {
+        setExpenseTypeEditingId("");
+        setExpenseTypeForm(emptyExpenseTypeForm);
+      }
+      await loadData();
+      flash("Expense type deleted.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete expense type.");
     } finally {
       setBusy("");
     }
@@ -1336,11 +1408,50 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   </label>
                   <label>
                     Type
-                    <input value={expenseForm.type} onChange={(event) => setExpenseForm({ ...expenseForm, type: event.target.value })} required />
+                    <select
+                      value={expenseForm.type}
+                      onChange={(event) => {
+                        if (event.target.value === "__add_new__") {
+                          setExpenseTypeEditingId("");
+                          setExpenseTypeForm(emptyExpenseTypeForm);
+                          setManageExpenseLists(true);
+                          return;
+                        }
+                        setExpenseForm({ ...expenseForm, type: event.target.value });
+                      }}
+                      required
+                    >
+                      <option value="">Select type</option>
+                      {expenseTypes.map((expenseType) => (
+                        <option value={expenseType.name} key={expenseType._id}>
+                          {expenseType.name}
+                        </option>
+                      ))}
+                      <option value="__add_new__">+ Add new type</option>
+                    </select>
                   </label>
                   <label>
                     Vendor
-                    <input list="vendor-list" value={expenseForm.vendor} onChange={(event) => setExpenseForm({ ...expenseForm, vendor: event.target.value })} />
+                    <select
+                      value={expenseForm.vendor}
+                      onChange={(event) => {
+                        if (event.target.value === "__add_new__") {
+                          setVendorEditingId("");
+                          setVendorForm(emptyVendorForm);
+                          setManageExpenseLists(true);
+                          return;
+                        }
+                        setExpenseForm({ ...expenseForm, vendor: event.target.value });
+                      }}
+                    >
+                      <option value="">Select vendor</option>
+                      {vendors.map((vendor) => (
+                        <option value={vendor.name} key={vendor._id}>
+                          {vendor.name}
+                        </option>
+                      ))}
+                      <option value="__add_new__">+ Add new vendor</option>
+                    </select>
                   </label>
                   <label>
                     Amount
@@ -1361,6 +1472,98 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     <input value={expenseForm.year} onChange={(event) => setExpenseForm({ ...expenseForm, year: event.target.value })} inputMode="numeric" />
                   </label>
                 </div>
+                <button className="secondary-action small manage-lists-button" type="button" onClick={() => setManageExpenseLists((current) => !current)}>
+                  <SlidersHorizontal size={17} />
+                  {manageExpenseLists ? "Close type and vendor manager" : "Manage types and vendors"}
+                </button>
+                {manageExpenseLists && (
+                  <div className="expense-lookup-manager">
+                    <section>
+                      <div className="charge-heading">
+                        <strong>Types</strong>
+                        <button
+                          className="secondary-action small"
+                          type="button"
+                          onClick={() => {
+                            setExpenseTypeEditingId("");
+                            setExpenseTypeForm(emptyExpenseTypeForm);
+                          }}
+                        >
+                          <Plus size={16} />
+                          Add new
+                        </button>
+                      </div>
+                      <div className="lookup-editor-row">
+                        <input
+                          value={expenseTypeForm.name}
+                          onChange={(event) => setExpenseTypeForm({ name: event.target.value })}
+                          placeholder="Type name"
+                        />
+                        <button className="secondary-action small" type="button" onClick={saveExpenseType} disabled={!expenseTypeForm.name.trim() || busy === "expense-type"}>
+                          <Save size={16} />
+                          {expenseTypeEditingId ? "Update" : "Add"}
+                        </button>
+                      </div>
+                      <div className="lookup-list">
+                        {expenseTypes.map((expenseType) => (
+                          <div key={expenseType._id}>
+                            <span>{expenseType.name}</span>
+                            <div className="card-actions">
+                              <button className="icon-button" type="button" onClick={() => editExpenseType(expenseType)} title="Edit type">
+                                <Pencil size={16} />
+                              </button>
+                              <button className="icon-button danger" type="button" onClick={() => deleteExpenseType(expenseType._id)} title="Delete type">
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                    <section>
+                      <div className="charge-heading">
+                        <strong>Vendors</strong>
+                        <button
+                          className="secondary-action small"
+                          type="button"
+                          onClick={() => {
+                            setVendorEditingId("");
+                            setVendorForm(emptyVendorForm);
+                          }}
+                        >
+                          <Plus size={16} />
+                          Add new
+                        </button>
+                      </div>
+                      <div className="lookup-editor-row">
+                        <input
+                          value={vendorForm.name}
+                          onChange={(event) => setVendorForm({ ...vendorForm, name: event.target.value })}
+                          placeholder="Vendor name"
+                        />
+                        <button className="secondary-action small" type="button" onClick={saveVendor} disabled={!vendorForm.name.trim() || busy === "vendor"}>
+                          <Save size={16} />
+                          {vendorEditingId ? "Update" : "Add"}
+                        </button>
+                      </div>
+                      <div className="lookup-list">
+                        {vendors.map((vendor) => (
+                          <div key={vendor._id}>
+                            <span>{vendor.name}</span>
+                            <div className="card-actions">
+                              <button className="icon-button" type="button" onClick={() => editVendor(vendor)} title="Edit vendor">
+                                <Pencil size={16} />
+                              </button>
+                              <button className="icon-button danger" type="button" onClick={() => deleteVendor(vendor._id)} title="Delete vendor">
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                )}
                 <label>
                   Notes
                   <textarea value={expenseForm.notes} onChange={(event) => setExpenseForm({ ...expenseForm, notes: event.target.value })} />
@@ -1618,12 +1821,6 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           <option value={property.name} key={property._id} />
         ))}
       </datalist>
-      <datalist id="vendor-list">
-        {vendors.map((vendor) => (
-          <option value={vendor.name} key={vendor._id} />
-        ))}
-      </datalist>
-
       {statementEdit && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <form className="statement-edit-modal" onSubmit={saveStatementEdit}>

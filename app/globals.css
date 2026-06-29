@@ -616,6 +616,58 @@ textarea:focus {
   flex-wrap: wrap;
 }
 
+.manage-lists-button {
+  justify-self: start;
+}
+
+.expense-lookup-manager {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.expense-lookup-manager > section {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.lookup-editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.lookup-list {
+  display: grid;
+  max-height: 250px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+}
+
+.lookup-list > div {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lookup-list > div > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lookup-list .card-actions {
+  flex-wrap: nowrap;
+}
+
 .list-panel,
 .settings-stack {
   display: grid;
@@ -2224,6 +2276,14 @@ tr:last-child td {
 }
 
 @media (max-width: 760px) {
+  .expense-lookup-manager {
+    grid-template-columns: 1fr;
+  }
+
+  .lookup-editor-row {
+    grid-template-columns: 1fr;
+  }
+
   .owner-shell {
     grid-template-columns: 1fr;
   }
