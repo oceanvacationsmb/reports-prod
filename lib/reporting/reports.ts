@@ -722,8 +722,8 @@ function expensesTable(expenses: ExpenseLike[], title = "Expenses", options: { i
         ${includeProperty ? `<td>${escapeHtml(expense.property)}</td>` : ""}
         <td>${escapeHtml(expense.type)}</td>
         <td>${escapeHtml(expense.notes || "")}</td>
+        <td>${escapeHtml(expense.vendor || "")}</td>
         <td>${formatMoney(Number(expense.amount || 0))}</td>
-        <td>${escapeHtml(`${expense.month}/${expense.year}`)}</td>
         <td>${invoiceUrl ? `<a href="${escapeHtml(invoiceUrl)}" target="_blank" rel="noreferrer">Invoice</a>` : ""}</td>
         ${editActions(kind, expense._id)}
       </tr>`
@@ -734,7 +734,7 @@ function expensesTable(expenses: ExpenseLike[], title = "Expenses", options: { i
     <h2>${escapeHtml(title)}</h2>
     <div class="table-wrap">
       <table>
-        <thead><tr>${includeProperty ? "<th>Property</th>" : ""}<th>Type</th><th>Note</th><th>Amount</th><th>Period</th><th>Invoice</th><th>Actions</th></tr></thead>
+        <thead><tr>${includeProperty ? "<th>Property</th>" : ""}<th>Type</th><th>Note</th><th>Vendor</th><th>Amount</th><th>Invoice</th><th>Actions</th></tr></thead>
         <tbody>${body || `<tr><td colspan="${columnCount}">No ${escapeHtml(title.toLowerCase())} found.</td></tr>`}</tbody>
       </table>
     </div>
