@@ -30,16 +30,36 @@ function splitPeriod(value: unknown) {
   };
 }
 
-async function updateReservation(ownerId: string, id: string, values: Record<string, string | number>) {
-  const caches = await GuestyCache.find({ ownerId }).sort({ createdAt: -1 });
-  let changed = 0;
+function normalizedDateValue(value: unknown) {
+  const text = String(value || "").trim();
+  const usDate = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (usDate) return `${usDate[3]}-${usDate[1].padStart(2, "0")}-${usDate[2].padStart(2, "0")}`;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? text : date.toISOString().slice(0, 10);
+}
+
+async function updateReservation(
+  ownerId: string,
+  id: string,
+  values: Record<string, string | number>,
+  options: { manual?: boolean } = {}
+) {
+  const existing = await ReservationOverride.findOne({ ownerId, reservationId: id }).lean();
+  const caches = options.manual ? [] : await GuestyCache.find({ ownerId }).sort({ createdAt: -1 }).lean();
+  const existsInCache = caches.some((cache: { payload?: unknown }) =>
+    (Array.isArray(cache.payload) ? cache.payload : []).some((row: Record<string, unknown>) => String(row.id) === id)
+  );
+  if (!options.manual && !existsInCache && !existing?.manual) {
+    throw Object.assign(new Error("Reservation row not found in Guesty data."), { status: 404 });
+  }
+
   const overrideValues: Record<string, string | number> = {};
 
   if (values.property !== undefined) overrideValues.property = String(values.property);
   if (values.guestName !== undefined) overrideValues.guestName = String(values.guestName);
   if (values.reservationCode !== undefined) overrideValues.confirmationCode = String(values.reservationCode);
-  if (values.checkIn !== undefined) overrideValues.checkIn = String(values.checkIn);
-  if (values.checkOut !== undefined) overrideValues.checkOut = String(values.checkOut);
+  if (values.checkIn !== undefined) overrideValues.checkIn = normalizedDateValue(values.checkIn);
+  if (values.checkOut !== undefined) overrideValues.checkOut = normalizedDateValue(values.checkOut);
   if (values.nights !== undefined) overrideValues.nights = numberValue(values.nights);
   if (values.source !== undefined) overrideValues.source = String(values.source);
   if (values.grossPayout !== undefined) overrideValues.manualTotalPayout = numberValue(values.grossPayout);
@@ -50,48 +70,26 @@ async function updateReservation(ownerId: string, id: string, values: Record<str
   if (values.ownerPayout !== undefined) overrideValues.manualOwnerPayout = numberValue(values.ownerPayout);
   if (values.amountDue !== undefined) overrideValues.manualAmountDue = numberValue(values.amountDue);
   if (values.ownerStay !== undefined) overrideValues.manualAmountDue = numberValue(values.ownerStay);
-  if (values.expectedPayout !== undefined) overrideValues.manualExpectedPayoutDate = String(values.expectedPayout);
+  if (values.expectedPayout !== undefined) overrideValues.manualExpectedPayoutDate = normalizedDateValue(values.expectedPayout);
 
-  for (const cache of caches) {
-    const payload = Array.isArray(cache.payload) ? cache.payload : [];
-    const nextPayload = payload.filter((row: Record<string, unknown>) => String(row.id) !== id);
-    const deleted = nextPayload.length !== payload.length;
+  const mergedValues = { ...(existing?.values || {}), ...overrideValues };
+  if (numberValue(values.autoRecalculate) === 1) {
+    delete mergedValues.manualPmc;
+    delete mergedValues.manualOwnerPayout;
+    delete mergedValues.manualAmountDue;
+  }
 
-    if (Object.keys(values).length) {
-      for (const row of payload as Array<Record<string, unknown>>) {
-        if (String(row.id) !== id) continue;
-        Object.assign(row, overrideValues);
-        changed += 1;
+  await ReservationOverride.updateOne(
+    { ownerId, reservationId: id },
+    {
+      $set: {
+        values: mergedValues,
+        manual: Boolean(options.manual || existing?.manual),
+        deleted: false
       }
-      cache.markModified("payload");
-      await cache.save();
-      continue;
-    }
-
-    if (deleted) {
-      cache.payload = nextPayload;
-      cache.markModified("payload");
-      await cache.save();
-      changed += 1;
-    }
-  }
-
-  if (!changed) throw Object.assign(new Error("Reservation row not found in MongoDB cache."), { status: 404 });
-
-  if (Object.keys(values).length) {
-    const existing = await ReservationOverride.findOne({ ownerId, reservationId: id }).lean();
-    await ReservationOverride.updateOne(
-      { ownerId, reservationId: id },
-      { $set: { values: { ...(existing?.values || {}), ...overrideValues }, deleted: false } },
-      { upsert: true }
-    );
-  } else {
-    await ReservationOverride.updateOne(
-      { ownerId, reservationId: id },
-      { $set: { deleted: true } },
-      { upsert: true }
-    );
-  }
+    },
+    { upsert: true }
+  );
 }
 
 async function updateRecurring(ownerId: string, id: string, values: Record<string, string | number>) {
@@ -152,13 +150,37 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
+export async function POST(req: NextRequest) {
+  try {
+    assertAdmin(req);
+    await connectDb();
+    const body = schema.parse(await req.json());
+    if (body.kind !== "reservation") {
+      throw Object.assign(new Error("Only missing reservations can be added here."), { status: 400 });
+    }
+    await updateReservation(body.ownerId, body.id, body.values, { manual: true });
+    return ok({ ok: true });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   try {
     assertAdmin(req);
     await connectDb();
     const body = schema.parse(await req.json());
 
-    if (body.kind === "reservation") await updateReservation(body.ownerId, body.id, {});
+    if (body.kind === "reservation") {
+      const existing = await ReservationOverride.findOne({ ownerId: body.ownerId, reservationId: body.id }).lean();
+      if (!existing?.manual) {
+        throw Object.assign(
+          new Error("Guesty reservations cannot be deleted. Edit the reservation dates or details instead."),
+          { status: 400 }
+        );
+      }
+      await ReservationOverride.deleteOne({ ownerId: body.ownerId, reservationId: body.id });
+    }
     if (body.kind === "expense") await Expense.deleteOne({ _id: body.id, ownerId: body.ownerId });
     if (body.kind === "recurring") await updateRecurring(body.ownerId, body.id, {});
 

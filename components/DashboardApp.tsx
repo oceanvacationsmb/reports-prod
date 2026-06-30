@@ -96,8 +96,10 @@ type StatementEdit = {
   kind: string;
   id: string;
   isOwnerStay: boolean;
+  isNew?: boolean;
   fields: { key: string; label: string; type: "text" | "number" | "date" }[];
   values: Record<string, string>;
+  originalValues: Record<string, string>;
 };
 
 type ReportResponse = {
@@ -595,6 +597,89 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     return Number(value.replace(/[^0-9.-]/g, "")) || 0;
   }
 
+  function dateInputValue(value: string) {
+    const text = value.trim();
+    const usDate = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (usDate) return `${usDate[3]}-${usDate[1].padStart(2, "0")}-${usDate[2].padStart(2, "0")}`;
+    return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+  }
+
+  function calculatedReservationValues(netAccommodation: number, current: Record<string, string>) {
+    if (!selectedOwner) return current;
+    const pmcRate = selectedOwner.type === "split"
+      ? 1 - Number(selectedOwner.splitOwnerPercent || 0) / 100
+      : Number(selectedOwner.percent || 0);
+    const pmc = netAccommodation * pmcRate;
+    const ownerPayout = selectedOwner.type === "split"
+      ? netAccommodation * (Number(selectedOwner.splitOwnerPercent || 0) / 100)
+      : netAccommodation - pmc;
+    const next: Record<string, string> = {
+      ...current,
+      pmc: pmc.toFixed(2),
+      ownerPayout: ownerPayout.toFixed(2)
+    };
+    if ("amountDue" in current) {
+      next.amountDue = (
+        pmc +
+        moneyToNumber(current.cleaningFee || "0") +
+        moneyToNumber(current.vrboWebsiteFee || "0")
+      ).toFixed(2);
+    }
+    return next;
+  }
+
+  function openMissingReservation() {
+    const property = reportForm.property || selectedOwner?.properties?.[0] || "";
+    const identityFields: StatementEdit["fields"] = [
+      { key: "property", label: "Property", type: "text" },
+      { key: "reservationCode", label: "Reservation Code", type: "text" },
+      { key: "guestName", label: "Guest Name", type: "text" },
+      { key: "checkIn", label: "Check In", type: "date" },
+      { key: "checkOut", label: "Check Out", type: "date" },
+      { key: "nights", label: "Nights", type: "number" }
+    ];
+    const amountFields: StatementEdit["fields"] = selectedOwner?.type === "draft"
+      ? [
+          { key: "grossPayout", label: "Gross Payout", type: "number" },
+          { key: "cleaningFee", label: "Cleaning Fee", type: "number" },
+          { key: "netAcc", label: "Net Accommodation", type: "number" },
+          { key: "vrboWebsiteFee", label: "VRBO/Website Fee", type: "number" },
+          { key: "pmc", label: "PMC", type: "number" },
+          { key: "amountDue", label: "Amount Due", type: "number" }
+        ]
+      : [
+          { key: "netAcc", label: "Net Accommodation", type: "number" },
+          { key: "pmc", label: "PMC", type: "number" },
+          { key: "ownerPayout", label: "Owner Payout", type: "number" },
+          { key: "expectedPayout", label: "Expected Payout", type: "date" }
+        ];
+    const fields = [...identityFields, ...amountFields];
+    const values: Record<string, string> = {
+      property,
+      reservationCode: "",
+      guestName: "",
+      checkIn: "",
+      checkOut: "",
+      nights: "0",
+      netAcc: "0",
+      pmc: "0.00"
+    };
+    if (selectedOwner?.type === "draft") {
+      Object.assign(values, { grossPayout: "0", cleaningFee: "0", vrboWebsiteFee: "0", amountDue: "0.00" });
+    } else {
+      Object.assign(values, { ownerPayout: "0.00", expectedPayout: "" });
+    }
+    setStatementEdit({
+      kind: "reservation",
+      id: `manual-${Date.now()}`,
+      isOwnerStay: false,
+      isNew: true,
+      fields,
+      values,
+      originalValues: { ...values }
+    });
+  }
+
   function fieldKey(label: string) {
     const normalized = label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     const map: Record<string, string> = {
@@ -747,7 +832,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         });
       } else {
         const isOwnerStay = Boolean(button.closest("table")?.querySelector("th:nth-child(4)")?.textContent?.includes("Owner Stay"));
-        setStatementEdit({ kind, id, isOwnerStay, fields, values });
+        const normalizedValues = fields.reduce<Record<string, string>>((acc, field) => {
+          acc[field.key] = field.type === "date" ? dateInputValue(values[field.key] || "") : values[field.key] || "";
+          return acc;
+        }, {});
+        setStatementEdit({ kind, id, isOwnerStay, fields, values: normalizedValues, originalValues: { ...normalizedValues } });
         return;
       }
       await loadData();
@@ -776,9 +865,17 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
     const values: Record<string, string | number> = { ...statementEdit.values };
     if (statementEdit.kind === "reservation") {
+      const accommodationChanged =
+        moneyToNumber(String(values.netAcc || "0")) !== moneyToNumber(statementEdit.originalValues.netAcc || "0");
       if (values.nights !== undefined) values.nights = Number(values.nights) || 0;
       for (const key of ["grossPayout", "cleaningFee", "netAcc", "vrboWebsiteFee", "pmc", "ownerPayout", "amountDue", "ownerStay"]) {
         if (values[key] !== undefined) values[key] = moneyToNumber(String(values[key] || "0"));
+      }
+      if (accommodationChanged || statementEdit.isNew) {
+        values.autoRecalculate = 1;
+        delete values.pmc;
+        delete values.ownerPayout;
+        delete values.amountDue;
       }
     } else {
       if (values.amount !== undefined) values.amount = moneyToNumber(String(values.amount || "0"));
@@ -790,9 +887,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     }
 
     try {
+      const itemId = statementEdit.isNew && typeof values.reservationCode === "string"
+        ? values.reservationCode.trim()
+        : statementEdit.id;
       await api("/api/statement-items", {
-        method: "PATCH",
-        body: JSON.stringify({ ownerId, kind: statementEdit.kind, id: statementEdit.id, values })
+        method: statementEdit.isNew ? "POST" : "PATCH",
+        body: JSON.stringify({ ownerId, kind: statementEdit.kind, id: itemId, values })
       });
       setStatementEdit(null);
       await loadData();
@@ -1174,6 +1274,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               <section className="report-stage">
                 <div className="report-toolbar">
                   <div className="report-actions">
+                    {reportForm.reportKey === "statement" && (
+                      <button className="secondary-action" type="button" onClick={openMissingReservation}>
+                        <Plus size={18} />
+                        Add missing reservation
+                      </button>
+                    )}
                     <button className="secondary-action" onClick={saveReport} disabled={busy === "save-report"}>
                       <Save size={18} />
                       {busy === "save-report" ? "Saving..." : "Save snapshot"}
@@ -1857,19 +1963,45 @@ export function DashboardApp({ user }: { user: SessionUser }) {
             <button className="modal-close" type="button" onClick={() => setStatementEdit(null)} aria-label="Close editor">
               <X size={22} />
             </button>
-            <h2>Edit statement row</h2>
+            <h2>{statementEdit.isNew ? "Add missing reservation" : "Edit statement row"}</h2>
             <div className="modal-field-grid">
               {statementEdit.fields.map((field) => (
                 <label key={field.key}>
                   {field.label}
-                  <input
-                    type={field.type === "date" ? "date" : "text"}
-                    value={statementEdit.values[field.key] || ""}
-                    inputMode={field.type === "number" ? "decimal" : undefined}
-                    onChange={(event) =>
-                      setStatementEdit({ ...statementEdit, values: { ...statementEdit.values, [field.key]: event.target.value } })
-                    }
-                  />
+                  {field.key === "property" && selectedOwner?.properties?.length ? (
+                    <select
+                      value={statementEdit.values[field.key] || ""}
+                      required={Boolean(statementEdit.isNew)}
+                      onChange={(event) => {
+                        setStatementEdit({
+                          ...statementEdit,
+                          values: { ...statementEdit.values, [field.key]: event.target.value }
+                        });
+                      }}
+                    >
+                      {selectedOwner.properties.map((property) => (
+                        <option key={property} value={property}>{property}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={field.type === "date" ? "date" : "text"}
+                      value={statementEdit.values[field.key] || ""}
+                      inputMode={field.type === "number" ? "decimal" : undefined}
+                      required={Boolean(
+                        statementEdit.isNew &&
+                        ["property", "reservationCode", "guestName", "checkIn", "checkOut", "netAcc"].includes(field.key)
+                      )}
+                      onChange={(event) => {
+                      const value = event.target.value;
+                      const values = { ...statementEdit.values, [field.key]: value };
+                      setStatementEdit({
+                        ...statementEdit,
+                        values: field.key === "netAcc" ? calculatedReservationValues(moneyToNumber(value), values) : values
+                      });
+                      }}
+                    />
+                  )}
                 </label>
               ))}
             </div>
@@ -1877,7 +2009,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               <button type="button" className="secondary-action" onClick={() => setStatementEdit(null)}>
                 Cancel
               </button>
-              <button className="primary-action">Save</button>
+              <button className="primary-action">{statementEdit.isNew ? "Add reservation" : "Save"}</button>
             </div>
           </form>
         </div>

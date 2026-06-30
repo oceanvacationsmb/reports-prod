@@ -70,7 +70,12 @@ function safeHttpUrl(value: unknown) {
 
 function parseDate(value?: string) {
   if (!value) return null;
-  const date = new Date(`${value}T00:00:00.000Z`);
+  const text = value.trim();
+  const usDate = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  const normalized = usDate
+    ? `${usDate[3]}-${usDate[1].padStart(2, "0")}-${usDate[2].padStart(2, "0")}`
+    : text;
+  const date = new Date(`${normalized}T00:00:00.000Z`);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -103,7 +108,8 @@ function inPeriod(row: NormalizedReservation, startDate: string, endDate: string
   const date = parseDate(row.checkIn);
   const start = parseDate(startDate);
   const end = parseDate(endDate);
-  if (!date || !start || !end) return true;
+  if (!start || !end) return true;
+  if (!date) return false;
   return date >= start && date <= end;
 }
 
@@ -198,10 +204,16 @@ export function recurringExpenses(owner: OwnerLike, startDate: string, endDate: 
 }
 
 function filterRows(rows: NormalizedReservation[], request: ReportRequest, startDate: string, endDate: string) {
-  return rows.filter((row) => {
-    const propertyOk = !request.property || row.property === request.property;
-    return propertyOk && inPeriod(row, startDate, endDate);
-  });
+  return rows
+    .filter((row) => {
+      const propertyOk = !request.property || row.property === request.property;
+      return propertyOk && inPeriod(row, startDate, endDate);
+    })
+    .sort((a, b) => {
+      const aTime = parseDate(a.checkIn)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const bTime = parseDate(b.checkIn)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      return aTime - bTime || a.checkOut.localeCompare(b.checkOut) || a.id.localeCompare(b.id);
+    });
 }
 
 function filterExpenses(expenses: ExpenseLike[], request: ReportRequest, startDate: string, endDate: string) {
@@ -211,12 +223,12 @@ function filterExpenses(expenses: ExpenseLike[], request: ReportRequest, startDa
   });
 }
 
-function editActions(kind: "reservation" | "expense" | "recurring", id?: string) {
+function editActions(kind: "reservation" | "expense" | "recurring", id?: string, options: { allowDelete?: boolean } = {}) {
   if (!id) return "";
   return `
     <td class="row-actions">
       <button type="button" data-report-action="edit" data-report-kind="${kind}" data-report-id="${escapeHtml(id)}">Edit</button>
-      <button type="button" data-report-action="delete" data-report-kind="${kind}" data-report-id="${escapeHtml(id)}">Delete</button>
+      ${options.allowDelete === false ? "" : `<button type="button" data-report-action="delete" data-report-kind="${kind}" data-report-id="${escapeHtml(id)}">Delete</button>`}
     </td>
   `;
 }
@@ -453,7 +465,7 @@ function statementReservationTable(rows: CalculatedReservation[], owner: OwnerLi
           <td>${formatMoney(row.websiteVrboFee)}</td>
           <td>${formatMoney(row.pmc)}</td>
           <td>${formatMoney(row.manualAmountDue != null ? row.manualAmountDue : row.pmc + row.cleaning + row.websiteVrboFee)}</td>
-          ${editActions("reservation", row.id)}
+          ${editActions("reservation", row.id, { allowDelete: false })}
         </tr>`
         : `
         <tr>
@@ -465,7 +477,7 @@ function statementReservationTable(rows: CalculatedReservation[], owner: OwnerLi
           <td>${formatMoney(row.pmc)}</td>
           <td>${formatMoney(row.ownerPayoutBeforeExpenses)}</td>
           <td>${escapeHtml(row.isOwnerStay ? "" : formatShortDate(row.expectedPayoutDate))}</td>
-          ${editActions("reservation", row.id)}
+          ${editActions("reservation", row.id, { allowDelete: false })}
         </tr>`
     )
     .join("");
@@ -498,7 +510,7 @@ function ownerStayTable(rows: CalculatedReservation[]) {
         <td>${escapeHtml(formatShortDate(row.checkIn))}</td>
         <td>${escapeHtml(formatShortDate(row.checkOut))}</td>
         <td>${formatMoney(ownerStayCharge(row))}</td>
-        ${editActions("reservation", row.id)}
+        ${editActions("reservation", row.id, { allowDelete: false })}
       </tr>`
     )
     .join("");

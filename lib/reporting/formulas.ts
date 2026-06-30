@@ -81,7 +81,7 @@ export function netAccommodationDraft(
 ) {
   const websiteFee = websiteVrboFee(row, owner, calculationSource);
   if (row.manualAccommodation != null) {
-    return Math.max(0, hasManualSource(row) ? row.manualAccommodation - websiteFee : row.manualAccommodation);
+    return Math.max(0, row.manualAccommodation);
   }
 
   const net =
@@ -104,6 +104,9 @@ export function netAccommodationPayout(
   const cleaning = cleaningFee(row, owner, settings);
   const taxTotal = taxes(row);
   const websiteFee = websiteVrboFee(row, owner, calculationSource);
+  if (row.manualAccommodation != null) {
+    return Math.max(0, row.manualAccommodation);
+  }
   const payoutRegular = row.accommodationFare - row.markup + row.lengthOfStayDiscount;
   const payoutFeeLoad = cleaning + taxTotal + websiteFee + row.feeCreditCard;
 

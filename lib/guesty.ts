@@ -63,17 +63,56 @@ async function applyReservationOverrides(id: string, rows: NormalizedReservation
   const overrides = await ReservationOverride.find({ ownerId: id }).lean() as Array<{
     reservationId: string;
     values?: Partial<NormalizedReservation>;
+    manual?: boolean;
     deleted?: boolean;
   }>;
   if (!overrides.length) return rows;
 
   const byReservation = new Map(overrides.map((override) => [override.reservationId, override]));
-  return rows
+  const overriddenRows = rows
     .filter((row) => !byReservation.get(row.id)?.deleted)
     .map((row) => {
       const override = byReservation.get(row.id);
       return override?.values ? { ...row, ...override.values } : row;
     });
+  const existingIds = new Set(overriddenRows.map((row) => row.id));
+  const manualRows = overrides
+    .filter((override) => override.manual && !override.deleted && !existingIds.has(override.reservationId))
+    .map((override) => ({
+      id: override.reservationId,
+      property: "",
+      guestName: "",
+      checkIn: "",
+      checkOut: "",
+      nights: 0,
+      source: "Manual",
+      platform: "Manual",
+      confirmationCode: override.reservationId,
+      status: "confirmed",
+      totalPayout: 0,
+      accommodationFare: 0,
+      cleaningFare: 0,
+      markup: 0,
+      channelCommission: 0,
+      preCancellationHostPayout: 0,
+      feeCreditCard: 0,
+      lengthOfStayDiscount: 0,
+      airbnbResolutionCenter: 0,
+      taxesCombined: 0,
+      taxCity: 0,
+      taxState: 0,
+      taxCounty: 0,
+      taxOccupancy: 0,
+      taxGtc: 0,
+      invoiceItemsTaxCombined: 0,
+      detailedTaxesCombined: 0,
+      rowTaxTotal: 0,
+      invoiceItemsRaw: [],
+      raw: { manual: true },
+      ...(override.values || {})
+    } as NormalizedReservation));
+
+  return [...overriddenRows, ...manualRows];
 }
 
 export async function getGuestyReservations(owner: OwnerLike, query: GuestyQuery = {}) {

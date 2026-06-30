@@ -175,6 +175,7 @@ const reservationOverrideSchema = new Schema(
     ownerId: { type: Schema.Types.ObjectId, ref: "Owner", required: true, index: true },
     reservationId: { type: String, required: true },
     values: { type: Schema.Types.Mixed, default: {} },
+    manual: { type: Boolean, default: false },
     deleted: { type: Boolean, default: false }
   },
   { timestamps: true, versionKey: false }
