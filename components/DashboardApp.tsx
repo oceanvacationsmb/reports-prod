@@ -704,6 +704,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       "amount due": "amountDue",
       "owner stay": "ownerStay",
       type: "type",
+      note: "notes",
       vendor: "vendor",
       amount: "amount",
       period: "period",

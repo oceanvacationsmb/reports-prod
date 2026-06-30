@@ -133,6 +133,10 @@ export async function PATCH(req: NextRequest) {
     if (body.kind === "reservation") await updateReservation(body.ownerId, body.id, body.values);
     if (body.kind === "expense") {
       const updates: Record<string, string | number> = { ...body.values };
+      if (updates.note !== undefined && updates.notes === undefined) {
+        updates.notes = updates.note;
+        delete updates.note;
+      }
       if (updates.period !== undefined) {
         const period = splitPeriod(updates.period);
         if (period.month) updates.month = period.month;
