@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingIncludes: {
+    "/api/reports/pdf/*": ["./node_modules/@sparticuz/chromium/bin/**/*"]
+  },
   serverExternalPackages: [
     "mongoose",
     "bcryptjs",
