@@ -801,12 +801,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       body
     });
     const gmailUrl = `https://mail.google.com/mail/?${params.toString()}`;
-    const gmailWindow = window.open(gmailUrl, "_blank");
-    if (gmailWindow) {
-      gmailWindow.opener = null;
-    } else {
-      window.location.assign(gmailUrl);
-    }
+    window.location.assign(gmailUrl);
     setEmailDraft(null);
   }
 
