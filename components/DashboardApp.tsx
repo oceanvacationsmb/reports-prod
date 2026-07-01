@@ -793,7 +793,21 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   function sendEmailDraft() {
     if (!emailDraft) return;
     const body = `${emailDraft.message}\n\nReport link:\n${emailDraft.reportLink}`;
-    window.location.href = `mailto:${encodeURIComponent(emailDraft.to)}?subject=${encodeURIComponent(emailDraft.subject)}&body=${encodeURIComponent(body)}`;
+    const params = new URLSearchParams({
+      view: "cm",
+      fs: "1",
+      to: emailDraft.to,
+      su: emailDraft.subject,
+      body
+    });
+    const gmailUrl = `https://mail.google.com/mail/?${params.toString()}`;
+    const gmailWindow = window.open(gmailUrl, "_blank");
+    if (gmailWindow) {
+      gmailWindow.opener = null;
+    } else {
+      window.location.assign(gmailUrl);
+    }
+    setEmailDraft(null);
   }
 
   async function handleStatementTableAction(event: MouseEvent | React.MouseEvent<HTMLDivElement>) {
@@ -2048,7 +2062,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               </button>
               <button className="primary-action">
                 <Send size={18} />
-                Send
+                Open Gmail
               </button>
             </div>
           </form>
