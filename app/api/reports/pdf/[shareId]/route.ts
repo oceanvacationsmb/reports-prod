@@ -1,15 +1,13 @@
-import { execFile } from "child_process";
-import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
-import os from "os";
+import chromium from "@sparticuz/chromium";
+import { readFile } from "fs/promises";
 import path from "path";
-import { promisify } from "util";
+import puppeteer from "puppeteer-core";
 import { connectDb } from "@/lib/db";
 import { SavedReport } from "@/lib/models";
 import { stripReportEditControls } from "@/lib/reporting/sanitize";
 
 export const runtime = "nodejs";
-
-const execFileAsync = promisify(execFile);
+export const maxDuration = 60;
 
 const chromePaths = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -25,7 +23,7 @@ function escapeHtml(value: unknown) {
     .replaceAll('"', "&quot;");
 }
 
-async function findChrome() {
+async function findLocalChrome() {
   for (const chromePath of chromePaths) {
     try {
       await readFile(chromePath);
@@ -34,14 +32,11 @@ async function findChrome() {
       // Try the next browser path.
     }
   }
-  throw Object.assign(new Error("Chrome is required to generate PDFs on this machine."), { status: 500 });
+  return "";
 }
 
 async function renderPdf(html: string, title: string) {
-  const chrome = await findChrome();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "ocean-report-"));
-  const htmlPath = path.join(tempDir, "report.html");
-  const pdfPath = path.join(tempDir, "report.pdf");
+  const localChrome = await findLocalChrome();
   const css = await readFile(path.join(process.cwd(), "app/globals.css"), "utf8");
 
   const document = `<!doctype html>
@@ -173,21 +168,26 @@ async function renderPdf(html: string, title: string) {
   </body>
 </html>`;
 
+  const browser = await puppeteer.launch({
+    args: localChrome
+      ? ["--disable-gpu", "--no-sandbox", "--disable-setuid-sandbox"]
+      : await puppeteer.defaultArgs({ args: chromium.args, headless: "shell" }),
+    executablePath: localChrome || await chromium.executablePath(),
+    headless: localChrome ? true : "shell"
+  });
+
   try {
-    await writeFile(htmlPath, document, "utf8");
-    await execFileAsync(chrome, [
-      "--headless=new",
-      "--disable-gpu",
-      "--no-sandbox",
-      "--no-pdf-header-footer",
-      "--run-all-compositor-stages-before-draw",
-      "--virtual-time-budget=1000",
-      `--print-to-pdf=${pdfPath}`,
-      `file://${htmlPath}`
-    ]);
-    return await readFile(pdfPath);
+    const page = await browser.newPage();
+    await page.setContent(document, { waitUntil: "load" });
+    const pdf = await page.pdf({
+      displayHeaderFooter: false,
+      format: "letter",
+      preferCSSPageSize: true,
+      printBackground: true
+    });
+    return Buffer.from(pdf);
   } finally {
-    await rm(tempDir, { recursive: true, force: true });
+    await browser.close();
   }
 }
 
