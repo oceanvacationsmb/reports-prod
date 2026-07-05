@@ -258,6 +258,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [expenseTypes, setExpenseTypes] = useState<ExpenseTypeOption[]>([]);
   const [selectedOwnerId, setSelectedOwnerId] = useState(user.ownerId || "");
   const [ownerEditingId, setOwnerEditingId] = useState("");
+  const [creatingOwner, setCreatingOwner] = useState(false);
   const [expenseEditingId, setExpenseEditingId] = useState("");
   const [propertyEditingId, setPropertyEditingId] = useState("");
   const [vendorEditingId, setVendorEditingId] = useState("");
@@ -355,11 +356,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   }, []);
 
   useEffect(() => {
-    if (tab !== "owners" || !selectedOwner?._id || ownerEditingId === selectedOwner._id) return;
+    if (tab !== "owners" || creatingOwner || !selectedOwner?._id || ownerEditingId === selectedOwner._id) return;
     setOwnerEditingId(selectedOwner._id);
     setOwnerForm(ownerToForm(selectedOwner));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, selectedOwner?._id]);
+  }, [tab, selectedOwner?._id, creatingOwner]);
 
   useEffect(() => {
     if (tab !== "expenses" || expenseEditingId) return;
@@ -401,9 +402,26 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   }
 
   function editOwner(owner: Owner) {
+    setCreatingOwner(false);
     setOwnerEditingId(owner._id);
     setOwnerForm(ownerToForm(owner));
     setTab("owners");
+  }
+
+  function createOwner() {
+    setCreatingOwner(true);
+    setOwnerEditingId("");
+    setOwnerForm(freshOwnerForm);
+    setError("");
+    setTab("owners");
+  }
+
+  function cancelCreateOwner() {
+    setCreatingOwner(false);
+    if (selectedOwner) {
+      setOwnerEditingId(selectedOwner._id);
+      setOwnerForm(ownerToForm(selectedOwner));
+    }
   }
 
   async function saveOwner(event: React.FormEvent) {
@@ -431,10 +449,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         cleaningCaps: parseArray(ownerForm.cleaningCaps, "Cleaning caps"),
         taxFlags: ownerForm.type === "payout" ? taxFlags : {}
       };
-      await api(ownerEditingId ? `/api/owners/${ownerEditingId}` : "/api/owners", {
+      const result = await api<{ owner: Owner }>(ownerEditingId ? `/api/owners/${ownerEditingId}` : "/api/owners", {
         method: ownerEditingId ? "PATCH" : "POST",
         body: JSON.stringify(body)
       });
+      setCreatingOwner(false);
+      setOwnerEditingId(result.owner._id);
+      setSelectedOwnerId(result.owner._id);
       await loadData();
       flash("Owner saved.");
     } catch (err) {
@@ -481,6 +502,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     if (!expenseFile) return expenseForm.invoiceUrl;
     const form = new FormData();
     form.append("file", expenseFile);
+    form.append("ownerId", selectedOwnerId);
     const data = await api<{ url: string }>("/api/invoices/upload", { method: "POST", body: form });
     return data.url;
   }
@@ -543,7 +565,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       return;
     }
     try {
-      const parsed = new URL(text);
+      const parsed = new URL(text, window.location.origin);
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Invalid invoice link.");
       window.open(parsed.toString(), "_blank", "noopener,noreferrer");
     } catch {
@@ -1325,7 +1347,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
             <form className="editor-panel" onSubmit={saveOwner}>
               <div className="panel-heading">
                 <SlidersHorizontal size={20} />
-                <h2>{selectedOwner?.name || "Owner"} Settings</h2>
+                <h2>{creatingOwner ? "New Owner" : `${selectedOwner?.name || "Owner"} Settings`}</h2>
+                {!creatingOwner && (
+                  <button className="secondary-action small panel-heading-action" type="button" onClick={createOwner}>
+                    <Plus size={16} />
+                    New owner
+                  </button>
+                )}
               </div>
               <div className="form-grid">
                 <label>
@@ -1517,8 +1545,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               <div className="button-row">
                 <button className="primary-action" disabled={busy === "owner"}>
                   <Save size={18} />
-                  Save owner
+                  {creatingOwner ? "Create owner" : "Save owner"}
                 </button>
+                {creatingOwner && (
+                  <button className="secondary-action" type="button" onClick={cancelCreateOwner}>
+                    <X size={18} />
+                    Cancel
+                  </button>
+                )}
               </div>
             </form>
           </section>

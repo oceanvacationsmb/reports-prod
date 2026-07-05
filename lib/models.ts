@@ -133,6 +133,17 @@ const expenseSchema = new Schema(
 
 expenseSchema.index({ ownerId: 1, year: 1, month: 1, property: 1 });
 
+const invoiceFileSchema = new Schema(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: "Owner", required: true, index: true },
+    filename: { type: String, required: true },
+    contentType: { type: String, required: true },
+    data: { type: Buffer, required: true },
+    createdAt: { type: Date, default: Date.now }
+  },
+  { versionKey: false }
+);
+
 const propertySchema = new Schema(
   {
     name: { type: String, required: true, unique: true, trim: true },
@@ -196,6 +207,7 @@ export const Owner: any = models.Owner || mongoose.model("Owner", ownerSchema);
 export const Vendor: any = models.Vendor || mongoose.model("Vendor", vendorSchema);
 export const ExpenseType: any = models.ExpenseType || mongoose.model("ExpenseType", expenseTypeSchema);
 export const Expense: any = models.Expense || mongoose.model("Expense", expenseSchema);
+export const InvoiceFile: any = models.InvoiceFile || mongoose.model("InvoiceFile", invoiceFileSchema);
 export const Property: any = models.Property || mongoose.model("Property", propertySchema);
 export const SavedReport: any = models.SavedReport || mongoose.model("SavedReport", savedReportSchema);
 export const GuestyCache: any = models.GuestyCache || mongoose.model("GuestyCache", guestyCacheSchema);
