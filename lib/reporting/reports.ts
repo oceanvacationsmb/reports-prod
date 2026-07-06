@@ -60,6 +60,7 @@ function escapeHtml(value: unknown) {
 function safeHttpUrl(value: unknown) {
   const text = String(value || "").trim();
   if (!text) return "";
+  if (/^\/api\/invoices\/[a-f0-9]{24}$/i.test(text)) return text;
   try {
     const url = new URL(text);
     return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
