@@ -136,7 +136,7 @@ export function recurringExpenses(owner: OwnerLike, startDate: string, endDate: 
   const start = parseDate(startDate);
   const end = parseDate(endDate);
   const year = start?.getUTCFullYear() || new Date().getUTCFullYear();
-  const month = start?.getUTCMonth() ? start.getUTCMonth() + 1 : 1;
+  const month = start ? start.getUTCMonth() + 1 : 1;
 
   for (const [index, charge] of (owner.recurringCharges || []).entries()) {
     charges.push({
@@ -153,17 +153,13 @@ export function recurringExpenses(owner: OwnerLike, startDate: string, endDate: 
   }
 
   for (const [index, charge] of (owner.monthlyRecurringCharges || []).entries()) {
-    if (start && end) {
-      const chargeDate = new Date(Date.UTC(year, charge.month - 1, 1));
-      if (chargeDate < start || chargeDate > end) continue;
-    }
     charges.push({
       _id: `monthlyRecurringCharges:${index}`,
       ownerId: String(owner._id || owner.id || ""),
       property: "Recurring",
       type: charge.label,
       amount: charge.amount,
-      month: charge.month,
+      month,
       year,
       vendor: "Recurring",
       notes: "Monthly recurring charge"

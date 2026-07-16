@@ -1470,8 +1470,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </button>
                   </div>
                   {parseFormArray<{ month?: number | string; label?: string; amount?: number | string }>(ownerForm.monthlyRecurringCharges).map((charge, index) => (
-                    <div className="charge-row three" key={`monthly-${index}`}>
-                      <input value={String(charge.month ?? "")} onChange={(event) => updateArrayField("monthlyRecurringCharges", index, "month", event.target.value)} inputMode="numeric" placeholder="Month" />
+                    <div className="charge-row two" key={`monthly-${index}`}>
                       <input value={charge.label || ""} onChange={(event) => updateArrayField("monthlyRecurringCharges", index, "label", event.target.value)} placeholder="Label" />
                       <input value={String(charge.amount ?? "")} onChange={(event) => updateArrayField("monthlyRecurringCharges", index, "amount", event.target.value)} inputMode="decimal" placeholder="Amount" />
                       <button className="icon-button danger" type="button" onClick={() => removeArrayRow("monthlyRecurringCharges", index)} title="Remove charge">
