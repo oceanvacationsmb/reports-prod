@@ -11,6 +11,8 @@ export type ReportRequest = {
   year?: number;
   property?: string;
   calculationSource?: "reports" | "portal";
+  readOnly?: boolean;
+  hideZeroReservations?: boolean;
 };
 
 type ReportResult = {
@@ -220,8 +222,12 @@ function filterExpenses(expenses: ExpenseLike[], request: ReportRequest, startDa
   });
 }
 
-function editActions(kind: "reservation" | "expense" | "recurring", id?: string, options: { allowDelete?: boolean } = {}) {
-  if (!id) return "";
+function editActions(
+  kind: "reservation" | "expense" | "recurring",
+  id?: string,
+  options: { allowDelete?: boolean; readOnly?: boolean } = {}
+) {
+  if (!id || options.readOnly) return "";
   return `
     <td class="row-actions">
       <button type="button" data-report-action="edit" data-report-kind="${kind}" data-report-id="${escapeHtml(id)}">Edit</button>
@@ -445,7 +451,7 @@ function reportShell(title: string, period: string, body: string, summary: Recor
   `;
 }
 
-function statementReservationTable(rows: CalculatedReservation[], owner: OwnerLike) {
+function statementReservationTable(rows: CalculatedReservation[], owner: OwnerLike, readOnly = false) {
   const isDraft = owner.type === "draft";
   const body = rows
     .map(
@@ -462,7 +468,7 @@ function statementReservationTable(rows: CalculatedReservation[], owner: OwnerLi
           <td>${formatMoney(row.websiteVrboFee)}</td>
           <td>${formatMoney(row.pmc)}</td>
           <td>${formatMoney(row.manualAmountDue != null ? row.manualAmountDue : row.pmc + row.cleaning + row.websiteVrboFee)}</td>
-          ${editActions("reservation", row.id, { allowDelete: false })}
+          ${editActions("reservation", row.id, { allowDelete: false, readOnly })}
         </tr>`
         : `
         <tr>
@@ -474,15 +480,15 @@ function statementReservationTable(rows: CalculatedReservation[], owner: OwnerLi
           <td>${formatMoney(row.pmc)}</td>
           <td>${formatMoney(row.ownerPayoutBeforeExpenses)}</td>
           <td>${escapeHtml(row.isOwnerStay ? "" : formatShortDate(row.expectedPayoutDate))}</td>
-          ${editActions("reservation", row.id, { allowDelete: false })}
+          ${editActions("reservation", row.id, { allowDelete: false, readOnly })}
         </tr>`
     )
     .join("");
 
   const header = isDraft
-    ? "<th>Reservation Code</th><th>Check In</th><th>Check Out</th><th>Nights</th><th>Gross Payout</th><th>Cleaning Fee</th><th>Net Acc.</th><th>VRBO/Website Fee</th><th>PMC</th><th>Amount Due</th><th>Actions</th>"
-    : "<th>Guest Name</th><th>Check In</th><th>Check Out</th><th>Nights</th><th>Net Acc.</th><th>PMC</th><th>Owner Payout</th><th>Expected Payout</th><th>Actions</th>";
-  const colspan = isDraft ? 11 : 9;
+    ? `<th>Reservation Code</th><th>Check In</th><th>Check Out</th><th>Nights</th><th>Gross Payout</th><th>Cleaning Fee</th><th>Net Acc.</th><th>VRBO/Website Fee</th><th>PMC</th><th>Amount Due</th>${readOnly ? "" : "<th>Actions</th>"}`
+    : `<th>Guest Name</th><th>Check In</th><th>Check Out</th><th>Nights</th><th>Net Acc.</th><th>PMC</th><th>Owner Payout</th><th>Expected Payout</th>${readOnly ? "" : "<th>Actions</th>"}`;
+  const colspan = isDraft ? (readOnly ? 10 : 11) : (readOnly ? 8 : 9);
 
   return `
     <div class="table-wrap">
@@ -498,7 +504,7 @@ function ownerStayCharge(row: CalculatedReservation) {
   return row.manualAmountDue != null ? row.manualAmountDue : Math.abs(row.ownerPayoutBeforeExpenses || row.cleaning);
 }
 
-function ownerStayTable(rows: CalculatedReservation[]) {
+function ownerStayTable(rows: CalculatedReservation[], readOnly = false) {
   const body = rows
     .map(
       (row) => `
@@ -507,7 +513,7 @@ function ownerStayTable(rows: CalculatedReservation[]) {
         <td>${escapeHtml(formatShortDate(row.checkIn))}</td>
         <td>${escapeHtml(formatShortDate(row.checkOut))}</td>
         <td>${formatMoney(ownerStayCharge(row))}</td>
-        ${editActions("reservation", row.id, { allowDelete: false })}
+        ${editActions("reservation", row.id, { allowDelete: false, readOnly })}
       </tr>`
     )
     .join("");
@@ -515,8 +521,8 @@ function ownerStayTable(rows: CalculatedReservation[]) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Guest Name</th><th>Check In</th><th>Check Out</th><th>Owner Stay</th><th>Actions</th></tr></thead>
-        <tbody>${body || '<tr><td colspan="5">No owner stays found.</td></tr>'}</tbody>
+        <thead><tr><th>Guest Name</th><th>Check In</th><th>Check Out</th><th>Owner Stay</th>${readOnly ? "" : "<th>Actions</th>"}</tr></thead>
+        <tbody>${body || `<tr><td colspan="${readOnly ? 4 : 5}">No owner stays found.</td></tr>`}</tbody>
       </table>
     </div>
   `;
@@ -707,9 +713,13 @@ function monthly1099Table(rows: CalculatedReservation[], expenses: ExpenseLike[]
   `;
 }
 
-function expensesTable(expenses: ExpenseLike[], title = "Expenses", options: { includeProperty?: boolean } = {}) {
+function expensesTable(
+  expenses: ExpenseLike[],
+  title = "Expenses",
+  options: { includeProperty?: boolean; readOnly?: boolean } = {}
+) {
   const includeProperty = options.includeProperty !== false;
-  const columnCount = includeProperty ? 7 : 6;
+  const columnCount = (includeProperty ? 6 : 5) + (options.readOnly ? 0 : 1);
   const body = expenses
     .map((expense) => {
       const kind = String(expense._id || "").includes(":") ? "recurring" : "expense";
@@ -722,7 +732,7 @@ function expensesTable(expenses: ExpenseLike[], title = "Expenses", options: { i
         <td>${escapeHtml(expense.vendor || "")}</td>
         <td>${formatMoney(Number(expense.amount || 0))}</td>
         <td>${invoiceUrl ? `<a href="${escapeHtml(invoiceUrl)}" target="_blank" rel="noreferrer">Invoice</a>` : ""}</td>
-        ${editActions(kind, expense._id)}
+        ${editActions(kind, expense._id, { readOnly: options.readOnly })}
       </tr>`
     })
     .join("");
@@ -731,7 +741,7 @@ function expensesTable(expenses: ExpenseLike[], title = "Expenses", options: { i
     <h2>${escapeHtml(title)}</h2>
     <div class="table-wrap">
       <table>
-        <thead><tr>${includeProperty ? "<th>Property</th>" : ""}<th>Type</th><th>Note</th><th>Vendor</th><th>Amount</th><th>Invoice</th><th>Actions</th></tr></thead>
+        <thead><tr>${includeProperty ? "<th>Property</th>" : ""}<th>Type</th><th>Note</th><th>Vendor</th><th>Amount</th><th>Invoice</th>${options.readOnly ? "" : "<th>Actions</th>"}</tr></thead>
         <tbody>${body || `<tr><td colspan="${columnCount}">No ${escapeHtml(title.toLowerCase())} found.</td></tr>`}</tbody>
       </table>
     </div>
@@ -771,10 +781,17 @@ function propertyStatementSummary(owner: OwnerLike, rows: CalculatedReservation[
   `;
 }
 
-function byProperty(rows: CalculatedReservation[], owner: OwnerLike, expenses: ExpenseLike[] = []) {
+function byProperty(
+  rows: CalculatedReservation[],
+  owner: OwnerLike,
+  expenses: ExpenseLike[] = [],
+  properties: PropertyLike[] = [],
+  readOnly = false
+) {
   const isOwnerLevel = (expense: ExpenseLike) => ["", "owner", "recurring"].includes(lower(expense.property).trim());
   const keys = [
     ...new Set([
+      ...(owner.properties || []).filter(Boolean),
       ...rows.map((row) => row.property || "Unassigned"),
       ...expenses.filter((expense) => !isOwnerLevel(expense)).map((expense) => expense.property)
     ])
@@ -786,19 +803,21 @@ function byProperty(rows: CalculatedReservation[], owner: OwnerLike, expenses: E
       const guestRows = propertyRows.filter((row) => !row.isOwnerStay);
       const ownerStayRows = propertyRows.filter((row) => row.isOwnerStay);
       const propertyExpenses = expenses.filter((expense) => expense.property === property);
+      const address = propertyOfficialAddress(property, properties);
       return `
         <section class="property-section">
           <header class="property-header">
             <div>
               <span>Property</span>
               <h2>${escapeHtml(property)}</h2>
+              ${address && address !== property ? `<p class="property-address">${escapeHtml(address)}</p>` : ""}
             </div>
           </header>
           ${propertyStatementSummary(owner, propertyRows, propertyExpenses)}
           <h3 class="statement-subhead">Reservations</h3>
-          ${statementReservationTable(guestRows, owner)}
-          ${ownerStayRows.length ? `<h3 class="statement-subhead">Owner Stays</h3>${ownerStayTable(ownerStayRows)}` : ""}
-          ${expensesTable(propertyExpenses, "Property Expenses", { includeProperty: false })}
+          ${statementReservationTable(guestRows, owner, readOnly)}
+          ${ownerStayRows.length ? `<h3 class="statement-subhead">Owner Stays</h3>${ownerStayTable(ownerStayRows, readOnly)}` : ""}
+          ${expensesTable(propertyExpenses, "Property Expenses", { includeProperty: false, readOnly })}
         </section>
       `;
     })
@@ -836,7 +855,10 @@ export function buildOwnerReport(
   properties: PropertyLike[] = []
 ): ReportResult {
   const period = periodFromRequest(request);
-  const reportRows = cleanCanceledRows(calculateRows(filterRows(rows, request, period.startDate, period.endDate), owner, settings, request));
+  const calculatedRows = cleanCanceledRows(calculateRows(filterRows(rows, request, period.startDate, period.endDate), owner, settings, request));
+  const reportRows = request.hideZeroReservations
+    ? calculatedRows.filter((row) => row.isOwnerStay || [row.grossPayout, row.netAccommodation, row.ownerPayoutBeforeExpenses].some((value) => Math.abs(value) >= 0.005))
+    : calculatedRows;
   const filteredExpenses = filterExpenses(rawExpenses, request, period.startDate, period.endDate);
   const recurring = recurringExpenses(owner, period.startDate, period.endDate);
   const total = totals(reportRows, filteredExpenses, recurring);
@@ -912,7 +934,7 @@ export function buildOwnerReport(
   }
 
   const ownerLevelExpenses = filteredExpenses.filter((expense) => ["", "owner", "recurring"].includes(lower(expense.property).trim()));
-  const body = `${byProperty(reportRows, owner, filteredExpenses)}${ownerLevelExpenses.length ? expensesTable(ownerLevelExpenses, "Owner Expenses") : ""}${recurring.length ? expensesTable(recurring, "Recurring Charges") : ""}`;
+  const body = `${byProperty(reportRows, owner, filteredExpenses, properties, Boolean(request.readOnly))}${ownerLevelExpenses.length ? expensesTable(ownerLevelExpenses, "Owner Expenses", { readOnly: request.readOnly }) : ""}${recurring.length ? expensesTable(recurring, "Recurring Charges", { readOnly: request.readOnly }) : ""}`;
   const baseSummary: Record<string, string | number> = owner.type === "draft"
     ? {
         grossPayout: total.grossPayout,
