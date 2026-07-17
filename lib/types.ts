@@ -116,6 +116,8 @@ export type NormalizedReservation = {
   detailedTaxesCombined: number;
   rowTaxTotal: number;
   invoiceItemsRaw: unknown[];
+  firstSeenAt?: string;
+  isNew?: boolean;
   raw: Record<string, unknown>;
 };
 

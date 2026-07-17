@@ -194,6 +194,19 @@ const reservationOverrideSchema = new Schema(
 
 reservationOverrideSchema.index({ ownerId: 1, reservationId: 1 }, { unique: true });
 
+const reservationSeenSchema = new Schema(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: "Owner", required: true, index: true },
+    reservationId: { type: String, required: true },
+    year: { type: Number, required: true, index: true },
+    firstSeenAt: { type: Date, required: true, default: Date.now },
+    baseline: { type: Boolean, default: false }
+  },
+  { versionKey: false }
+);
+
+reservationSeenSchema.index({ ownerId: 1, reservationId: 1 }, { unique: true });
+
 const settingSchema = new Schema(
   {
     key: { type: String, required: true, unique: true },
@@ -212,4 +225,5 @@ export const Property: any = models.Property || mongoose.model("Property", prope
 export const SavedReport: any = models.SavedReport || mongoose.model("SavedReport", savedReportSchema);
 export const GuestyCache: any = models.GuestyCache || mongoose.model("GuestyCache", guestyCacheSchema);
 export const ReservationOverride: any = models.ReservationOverride || mongoose.model("ReservationOverride", reservationOverrideSchema);
+export const ReservationSeen: any = models.ReservationSeen || mongoose.model("ReservationSeen", reservationSeenSchema);
 export const Setting: any = models.Setting || mongoose.model("Setting", settingSchema);

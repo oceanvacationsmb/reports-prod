@@ -1161,13 +1161,221 @@ textarea:focus {
 }
 
 .owner-statement-controls {
-  grid-template-columns: repeat(2, minmax(180px, 320px));
+  grid-template-columns: repeat(2, minmax(180px, 280px)) minmax(220px, auto);
+  align-items: end;
   margin-bottom: 18px;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(255, 253, 250, 0.96);
   box-shadow: var(--shadow-soft);
+}
+
+.owner-download-action {
+  width: max-content;
+  min-height: 48px;
+}
+
+.owner-calendar-panel {
+  margin-bottom: 18px;
+  padding: clamp(16px, 2.5vw, 26px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 250, 0.96);
+  box-shadow: var(--shadow-soft);
+}
+
+.owner-calendar-panel-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 12px;
+}
+
+.owner-calendar-panel-header > div:first-child > span,
+.owner-calendar-tools label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.owner-calendar-panel-header h2 {
+  margin: 3px 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.5rem, 3vw, 2.15rem);
+  font-weight: 500;
+}
+
+.owner-calendar-panel-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.owner-calendar-tools {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.owner-calendar-tools label {
+  min-width: 190px;
+}
+
+.owner-calendar-tools select {
+  display: block;
+  min-height: 42px;
+  margin-top: 4px;
+}
+
+.owner-calendar-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.owner-calendar-nav button {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.owner-rate-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.owner-rate-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.owner-rate-weekdays {
+  margin-bottom: 6px;
+}
+
+.owner-rate-weekdays span {
+  padding: 7px 4px;
+  border: 1px solid #cbd9d5;
+  background: #e8f1ef;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.owner-rate-cell {
+  position: relative;
+  min-width: 0;
+  min-height: 70px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fffdfa;
+  overflow: hidden;
+}
+
+.owner-rate-cell strong,
+.owner-rate-cell span,
+.owner-rate-cell em {
+  display: block;
+}
+
+.owner-rate-cell strong {
+  font-size: 0.78rem;
+}
+
+.owner-rate-cell span {
+  margin-top: 9px;
+  font-size: clamp(0.68rem, 1.6vw, 0.9rem);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.owner-rate-cell.reserved {
+  border-color: #2577a8;
+  background: #dcecf7;
+  color: #103d59;
+}
+
+.owner-rate-cell.owner-stay {
+  border-color: #a45a13;
+  background: #fff0d9;
+  color: #6f3605;
+}
+
+.owner-rate-cell.new {
+  box-shadow: inset 0 0 0 2px #d4482d;
+}
+
+.owner-rate-cell em {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: #d4482d;
+  color: #fff;
+  font-size: 0.54rem;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.owner-rate-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.owner-rate-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.owner-rate-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.owner-rate-legend .rate-reservation-dot { background: #2577a8; }
+.owner-rate-legend .rate-owner-dot { background: #a45a13; }
+.owner-rate-legend .rate-new-dot { background: #d4482d; }
+
+.new-reservation-row td {
+  background: #fff8ec;
+}
+
+.new-reservation-badge {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: #d4482d;
+  color: #fff;
+  font-size: 0.55rem;
+  font-weight: 900;
+  line-height: 1.2;
+  text-transform: uppercase;
+  vertical-align: middle;
 }
 
 .owner-statement-stage {
@@ -1212,6 +1420,38 @@ textarea:focus {
 
   .owner-statement-controls {
     grid-template-columns: 1fr;
+  }
+
+  .owner-download-action {
+    width: 100%;
+  }
+
+  .owner-calendar-panel-header,
+  .owner-calendar-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .owner-calendar-tools label {
+    min-width: 0;
+  }
+
+  .owner-calendar-nav button {
+    flex: 1;
+  }
+
+  .owner-rate-cell {
+    min-height: 58px;
+    padding: 5px;
+  }
+
+  .owner-rate-calendar-grid {
+    gap: 3px;
+  }
+
+  .owner-rate-cell span {
+    margin-top: 7px;
+    font-size: 0.62rem;
   }
 
   .owner-statement-preview .report-document {

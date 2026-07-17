@@ -77,7 +77,7 @@ export default function LoginPage() {
     }
   }
 
-  const title = mode === "login" ? "Reports Console" : mode === "requestReset" ? "Reset Link" : "New Password";
+  const title = mode === "login" ? "Owners Portal" : mode === "requestReset" ? "Reset Link" : "New Password";
 
   return (
     <main className="login-screen">

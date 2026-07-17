@@ -139,33 +139,49 @@ export function recurringExpenses(owner: OwnerLike, startDate: string, endDate: 
   const end = parseDate(endDate);
   const year = start?.getUTCFullYear() || new Date().getUTCFullYear();
   const month = start ? start.getUTCMonth() + 1 : 1;
+  const recurringMonths: Array<{ month: number; year: number }> = [];
+
+  if (start && end) {
+    const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+    while (cursor <= last) {
+      recurringMonths.push({ month: cursor.getUTCMonth() + 1, year: cursor.getUTCFullYear() });
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+  } else {
+    recurringMonths.push({ month, year });
+  }
 
   for (const [index, charge] of (owner.recurringCharges || []).entries()) {
-    charges.push({
-      _id: `recurringCharges:${index}`,
-      ownerId: String(owner._id || owner.id || ""),
-      property: "Recurring",
-      type: charge.label,
-      amount: charge.amount,
-      month,
-      year,
-      vendor: "Recurring",
-      notes: "Base recurring charge"
-    });
+    for (const periodMonth of recurringMonths) {
+      charges.push({
+        _id: `recurringCharges:${index}:${periodMonth.year}-${periodMonth.month}`,
+        ownerId: String(owner._id || owner.id || ""),
+        property: "Recurring",
+        type: charge.label,
+        amount: charge.amount,
+        month: periodMonth.month,
+        year: periodMonth.year,
+        vendor: "Recurring",
+        notes: "Base recurring charge"
+      });
+    }
   }
 
   for (const [index, charge] of (owner.monthlyRecurringCharges || []).entries()) {
-    charges.push({
-      _id: `monthlyRecurringCharges:${index}`,
-      ownerId: String(owner._id || owner.id || ""),
-      property: "Recurring",
-      type: charge.label,
-      amount: charge.amount,
-      month,
-      year,
-      vendor: "Recurring",
-      notes: "Monthly recurring charge"
-    });
+    for (const periodMonth of recurringMonths) {
+      charges.push({
+        _id: `monthlyRecurringCharges:${index}:${periodMonth.year}-${periodMonth.month}`,
+        ownerId: String(owner._id || owner.id || ""),
+        property: "Recurring",
+        type: charge.label,
+        amount: charge.amount,
+        month: periodMonth.month,
+        year: periodMonth.year,
+        vendor: "Recurring",
+        notes: "Monthly recurring charge"
+      });
+    }
   }
 
   for (const [index, charge] of (owner.specificDateRecurringCharges || []).entries()) {
@@ -457,8 +473,8 @@ function statementReservationTable(rows: CalculatedReservation[], owner: OwnerLi
     .map(
       (row) => isDraft
         ? `
-        <tr>
-          <td>${escapeHtml(row.confirmationCode || row.id)}</td>
+        <tr${row.isNew ? ' class="new-reservation-row"' : ""}>
+          <td>${escapeHtml(row.confirmationCode || row.id)}${row.isNew ? '<span class="new-reservation-badge">New</span>' : ""}</td>
           <td>${escapeHtml(formatShortDate(row.checkIn))}</td>
           <td>${escapeHtml(formatShortDate(row.checkOut))}</td>
           <td>${row.nights}</td>
@@ -471,8 +487,8 @@ function statementReservationTable(rows: CalculatedReservation[], owner: OwnerLi
           ${editActions("reservation", row.id, { allowDelete: false, readOnly })}
         </tr>`
         : `
-        <tr>
-          <td>${escapeHtml(row.guestName)}</td>
+        <tr${row.isNew ? ' class="new-reservation-row"' : ""}>
+          <td>${escapeHtml(row.guestName)}${row.isNew ? '<span class="new-reservation-badge">New</span>' : ""}</td>
           <td>${escapeHtml(formatShortDate(row.checkIn))}</td>
           <td>${escapeHtml(formatShortDate(row.checkOut))}</td>
           <td>${row.nights}</td>
