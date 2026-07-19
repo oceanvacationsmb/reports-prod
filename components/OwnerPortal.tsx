@@ -34,6 +34,12 @@ type PortalData = {
   calendarProperties: Array<{ name: string; address: string }>;
 };
 
+type CalendarPricing = {
+  configured: boolean;
+  connected: boolean;
+  rates: Array<{ date: string; rate: number; currency: string }>;
+};
+
 const monthNames = [
   "January",
   "February",
@@ -87,6 +93,15 @@ function rowCoversDate(row: CalendarRow, date: string) {
   return target >= start && target < end;
 }
 
+function rateLabel(rate: number, currency: string) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency || "USD",
+    minimumFractionDigits: Number.isInteger(rate) ? 0 : 2,
+    maximumFractionDigits: 2
+  }).format(rate);
+}
+
 function downloadFilename(response: Response, fallback: string) {
   const disposition = response.headers.get("Content-Disposition") || "";
   const match = disposition.match(/filename="([^"]+)"/i);
@@ -97,10 +112,14 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(String(today.getMonth() + 1));
+  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(today.getMonth() + 1);
   const [calendarProperty, setCalendarProperty] = useState("");
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [data, setData] = useState<PortalData | null>(null);
+  const [calendarPricing, setCalendarPricing] = useState<CalendarPricing | null>(null);
+  const [rateBusy, setRateBusy] = useState(false);
+  const [rateNotice, setRateNotice] = useState("");
   const [busy, setBusy] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [error, setError] = useState("");
@@ -126,8 +145,9 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
   }, [year, month]);
 
   useEffect(() => {
+    setCalendarYear(year);
     if (month !== "full-year") setCalendarMonth(Number(month));
-  }, [month]);
+  }, [month, year]);
 
   useEffect(() => {
     const properties = data?.calendarProperties || [];
@@ -136,11 +156,55 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
     }
   }, [data, calendarProperty]);
 
+  useEffect(() => {
+    if (!calendarOpen || !calendarProperty) {
+      setCalendarPricing(null);
+      setRateNotice("");
+      return;
+    }
+
+    let active = true;
+    setRateBusy(true);
+    setRateNotice("");
+    const params = new URLSearchParams({
+      year: String(calendarYear),
+      month: String(calendarMonth),
+      property: calendarProperty
+    });
+    api<CalendarPricing>(`/api/owner-portal/calendar?${params.toString()}`)
+      .then((response) => {
+        if (!active) return;
+        setCalendarPricing(response);
+        if (!response.configured) {
+          setRateNotice("Available rates need the Guesty pricing connection.");
+        } else if (!response.connected) {
+          setRateNotice("Available rates are not connected for this property yet.");
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCalendarPricing(null);
+          setRateNotice("Available rates could not be loaded.");
+        }
+      })
+      .finally(() => {
+        if (active) setRateBusy(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [calendarOpen, calendarProperty, calendarYear, calendarMonth]);
+
   const propertyRows = useMemo(
     () => (data?.calendarRows || []).filter((row) => row.property === calendarProperty),
     [data, calendarProperty]
   );
-  const cells = useMemo(() => calendarCells(year, calendarMonth), [year, calendarMonth]);
+  const cells = useMemo(() => calendarCells(calendarYear, calendarMonth), [calendarYear, calendarMonth]);
+  const rateByDate = useMemo(
+    () => new Map((calendarPricing?.rates || []).map((rate) => [rate.date, rate])),
+    [calendarPricing]
+  );
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
@@ -170,10 +234,9 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
   }
 
   function moveCalendar(delta: number) {
-    setCalendarMonth((current) => {
-      const next = current + delta;
-      return next < 1 ? 12 : next > 12 ? 1 : next;
-    });
+    const next = new Date(Date.UTC(calendarYear, calendarMonth - 1 + delta, 1));
+    setCalendarYear(next.getUTCFullYear());
+    setCalendarMonth(next.getUTCMonth() + 1);
   }
 
   const selectedProperty = data?.calendarProperties.find((property) => property.name === calendarProperty);
@@ -233,7 +296,7 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
           <div className="owner-calendar-panel-header">
             <div>
               <span>Booking calendar</span>
-              <h2>{monthNames[calendarMonth - 1]} {year}</h2>
+              <h2>{monthNames[calendarMonth - 1]} {calendarYear}</h2>
               <p>{selectedProperty?.address || calendarProperty}</p>
             </div>
             <div className="owner-calendar-tools">
@@ -262,27 +325,32 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
               const reservation = matches.find((row) => !row.isOwnerStay);
               const ownerStay = matches.some((row) => row.isOwnerStay);
               const isNew = matches.some((row) => row.isNew);
+              const availableRate = cell.date && !reservation && !ownerStay ? rateByDate.get(cell.date) : null;
               const title = matches.map((row) => row.isOwnerStay
                 ? `Owner stay: ${row.guestName}`
                 : `${row.sourceLabel}: ${row.guestName}`).join("\n");
               return (
                 <div
-                  className={`owner-rate-cell${reservation ? " reserved" : ""}${ownerStay ? " owner-stay" : ""}${isNew ? " new" : ""}`}
+                  className={`owner-rate-cell${reservation ? " reserved" : ""}${ownerStay ? " owner-stay" : ""}${availableRate ? " available-rate" : ""}${isNew ? " new" : ""}`}
                   key={`${cell.date || "blank"}-${index}`}
                   title={title}
                 >
                   {cell.day && <strong>{cell.day}</strong>}
                   {reservation && <span>{reservation.sourceLabel}</span>}
                   {ownerStay && !reservation && <span>Owner</span>}
+                  {availableRate && <span>{rateLabel(availableRate.rate, availableRate.currency)}</span>}
                   {isNew && <em>New</em>}
                 </div>
               );
             })}
           </div>
           <div className="owner-rate-legend">
+            <span><i className="rate-available-dot" /> Available nightly rate</span>
             <span><i className="rate-reservation-dot" /> Booked dates show source</span>
             <span><i className="rate-owner-dot" /> Owner stay</span>
             <span><i className="rate-new-dot" /> Newly added</span>
+            {rateBusy && <span>Loading available rates...</span>}
+            {!rateBusy && rateNotice && <span className="owner-rate-notice">{rateNotice}</span>}
           </div>
         </section>
       )}

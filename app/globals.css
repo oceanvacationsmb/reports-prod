@@ -1312,6 +1312,12 @@ textarea:focus {
   color: #103d59;
 }
 
+.owner-rate-cell.available-rate {
+  border-color: #17806d;
+  background: #e5f5ed;
+  color: #0b594b;
+}
+
 .owner-rate-cell.owner-stay {
   border-color: #a45a13;
   background: #fff0d9;
@@ -1343,6 +1349,15 @@ textarea:focus {
   margin-top: 12px;
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.owner-rate-notice {
+  color: #9a3c2e;
+  font-weight: 700;
+}
+
+.rate-available-dot {
+  background: #17806d;
 }
 
 .owner-rate-legend span {
