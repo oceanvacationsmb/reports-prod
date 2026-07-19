@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Download, FileText, LogOut } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, FileText, LogOut } from "lucide-react";
 import type { SessionUser } from "@/lib/types";
 
 type PortalReport = {
@@ -18,8 +18,7 @@ type CalendarRow = {
   guestName: string;
   checkIn: string;
   checkOut: string;
-  nightlyRate: number;
-  platform: string;
+  sourceLabel: string;
   isOwnerStay: boolean;
   isNew: boolean;
 };
@@ -88,14 +87,6 @@ function rowCoversDate(row: CalendarRow, date: string) {
   return target >= start && target < end;
 }
 
-function shortMoney(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0
-  }).format(value || 0);
-}
-
 function downloadFilename(response: Response, fallback: string) {
   const disposition = response.headers.get("Content-Disposition") || "";
   const match = disposition.match(/filename="([^"]+)"/i);
@@ -108,6 +99,7 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
   const [month, setMonth] = useState(String(today.getMonth() + 1));
   const [calendarMonth, setCalendarMonth] = useState(today.getMonth() + 1);
   const [calendarProperty, setCalendarProperty] = useState("");
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [data, setData] = useState<PortalData | null>(null);
   const [busy, setBusy] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -222,10 +214,22 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
           <Download size={18} />
           {pdfBusy ? "Preparing PDF..." : month === "full-year" ? "Download full-year PDF" : "Download statement PDF"}
         </button>
+        <button
+          className="secondary-action owner-calendar-toggle-action"
+          type="button"
+          onClick={() => setCalendarOpen((open) => !open)}
+          disabled={busy || !data?.calendarProperties.length}
+          aria-expanded={calendarOpen}
+          aria-controls="owner-booking-calendar"
+        >
+          <CalendarDays size={17} />
+          {calendarOpen ? "Hide calendar and rates" : "Show calendar and rates"}
+          {calendarOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
       </section>
 
-      {!busy && !error && data && data.calendarProperties.length > 0 && (
-        <section className="owner-calendar-panel">
+      {!busy && !error && data && data.calendarProperties.length > 0 && calendarOpen && (
+        <section className="owner-calendar-panel" id="owner-booking-calendar">
           <div className="owner-calendar-panel-header">
             <div>
               <span>Booking calendar</span>
@@ -249,7 +253,6 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
               </div>
             </div>
           </div>
-          <div className="owner-rate-note"><CalendarDays size={16} /> Rates shown are net accommodation per booked night.</div>
           <div className="owner-rate-calendar-grid owner-rate-weekdays">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day}>{day}</span>)}
           </div>
@@ -261,7 +264,7 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
               const isNew = matches.some((row) => row.isNew);
               const title = matches.map((row) => row.isOwnerStay
                 ? `Owner stay: ${row.guestName}`
-                : `${row.guestName}: ${shortMoney(row.nightlyRate)}/night`).join("\n");
+                : `${row.sourceLabel}: ${row.guestName}`).join("\n");
               return (
                 <div
                   className={`owner-rate-cell${reservation ? " reserved" : ""}${ownerStay ? " owner-stay" : ""}${isNew ? " new" : ""}`}
@@ -269,7 +272,7 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
                   title={title}
                 >
                   {cell.day && <strong>{cell.day}</strong>}
-                  {reservation && <span>{shortMoney(reservation.nightlyRate)}</span>}
+                  {reservation && <span>{reservation.sourceLabel}</span>}
                   {ownerStay && !reservation && <span>Owner</span>}
                   {isNew && <em>New</em>}
                 </div>
@@ -277,7 +280,7 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
             })}
           </div>
           <div className="owner-rate-legend">
-            <span><i className="rate-reservation-dot" /> Reservation</span>
+            <span><i className="rate-reservation-dot" /> Booked dates show source</span>
             <span><i className="rate-owner-dot" /> Owner stay</span>
             <span><i className="rate-new-dot" /> Newly added</span>
           </div>

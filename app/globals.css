@@ -1161,7 +1161,7 @@ textarea:focus {
 }
 
 .owner-statement-controls {
-  grid-template-columns: repeat(2, minmax(180px, 280px)) minmax(220px, auto);
+  grid-template-columns: repeat(2, minmax(160px, 1fr)) auto auto;
   align-items: end;
   margin-bottom: 18px;
   padding: 18px;
@@ -1174,6 +1174,16 @@ textarea:focus {
 .owner-download-action {
   width: max-content;
   min-height: 48px;
+}
+
+.owner-calendar-toggle-action {
+  width: max-content;
+  min-height: 48px;
+  margin-left: auto;
+  padding-inline: 14px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .owner-calendar-panel {
@@ -1245,15 +1255,6 @@ textarea:focus {
   border-radius: 6px;
   background: var(--panel);
   color: var(--ink);
-}
-
-.owner-rate-note {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 10px 0 14px;
-  color: var(--muted);
-  font-size: 0.78rem;
 }
 
 .owner-rate-calendar-grid {
@@ -1422,8 +1423,10 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
-  .owner-download-action {
+  .owner-download-action,
+  .owner-calendar-toggle-action {
     width: 100%;
+    margin-left: 0;
   }
 
   .owner-calendar-panel-header,

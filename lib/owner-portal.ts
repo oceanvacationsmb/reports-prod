@@ -97,6 +97,18 @@ function hasStatementValue(row: CalculatedReservation) {
   return row.isOwnerStay || [row.grossPayout, row.netAccommodation, row.ownerPayoutBeforeExpenses].some((value) => Math.abs(value) >= 0.005);
 }
 
+function bookingSource(row: NormalizedReservation) {
+  const source = row.source.trim().toLowerCase();
+  const platform = row.platform.trim().toLowerCase();
+  const combined = `${source} ${platform}`;
+
+  if (combined.includes("airbnb")) return "Airbnb";
+  if (combined.includes("vrbo") || combined.includes("homeaway")) return "VRBO";
+  if (combined.includes("booking")) return "Booking.com";
+  if (combined.includes("direct") || combined.includes("website") || combined.includes("manual")) return "Direct";
+  return row.source || row.platform || "Reserved";
+}
+
 export type OwnerCalendarRow = {
   id: string;
   property: string;
@@ -104,8 +116,7 @@ export type OwnerCalendarRow = {
   guestName: string;
   checkIn: string;
   checkOut: string;
-  nightlyRate: number;
-  platform: string;
+  sourceLabel: string;
   isOwnerStay: boolean;
   isNew: boolean;
 };
@@ -161,8 +172,7 @@ export async function loadOwnerPortal(ownerId: string, year: number, month?: num
       guestName: row.guestName,
       checkIn: row.checkIn,
       checkOut: row.checkOut,
-      nightlyRate: row.isOwnerStay || row.nights <= 0 ? 0 : row.netAccommodation / row.nights,
-      platform: row.platform || row.source,
+      sourceLabel: bookingSource(row),
       isOwnerStay: row.isOwnerStay,
       isNew: Boolean(row.isNew)
     }));
