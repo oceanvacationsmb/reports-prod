@@ -22,6 +22,48 @@ type ReportResult = {
   summary: Record<string, number | string>;
 };
 
+export type AdminIncomeTotals = {
+  companyIncome: number;
+  grossPayout: number;
+  cleaning: number;
+  netAccommodation: number;
+  pmc: number;
+  websiteVrboFee: number;
+  expenses: number;
+  recurringCharges: number;
+  ownerPayout: number;
+  bookedNights: number;
+  stays: number;
+};
+
+export type AdminIncomeOwnerRow = AdminIncomeTotals & {
+  ownerId: string;
+  owner: string;
+  ownerType: OwnerLike["type"];
+  properties: number;
+};
+
+export type AdminIncomePropertyRow = AdminIncomeTotals & {
+  ownerId: string;
+  owner: string;
+  property: string;
+  address: string;
+  area: string;
+};
+
+export type AdminIncomeMonthRow = AdminIncomeTotals & {
+  month: number;
+  label: string;
+};
+
+export type AdminIncomeData = {
+  periodLabel: string;
+  summary: AdminIncomeTotals;
+  monthly: AdminIncomeMonthRow[];
+  owners: AdminIncomeOwnerRow[];
+  properties: AdminIncomePropertyRow[];
+};
+
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const monthLabels = [
   "January",
@@ -977,6 +1019,160 @@ export function buildOwnerReport(
     periodLabel: period.label,
     summary,
     html: reportShell(`${name} Statement`, period.label, body, summary)
+  };
+}
+
+function emptyAdminIncomeTotals(): AdminIncomeTotals {
+  return {
+    companyIncome: 0,
+    grossPayout: 0,
+    cleaning: 0,
+    netAccommodation: 0,
+    pmc: 0,
+    websiteVrboFee: 0,
+    expenses: 0,
+    recurringCharges: 0,
+    ownerPayout: 0,
+    bookedNights: 0,
+    stays: 0
+  };
+}
+
+function adminIncomeTotals(rows: CalculatedReservation[], expenses: ExpenseLike[], recurring: ExpenseLike[] = []): AdminIncomeTotals {
+  const total = totals(rows, expenses, recurring);
+  const paidStays = rows.filter(
+    (row) => !row.isOwnerStay && [row.grossPayout, row.netAccommodation, row.ownerPayoutBeforeExpenses].some((value) => Math.abs(value) >= 0.005)
+  );
+  return {
+    companyIncome: total.pmc + total.cleaning + total.websiteVrboFee,
+    grossPayout: total.grossPayout,
+    cleaning: total.cleaning,
+    netAccommodation: total.netAccommodation,
+    pmc: total.pmc,
+    websiteVrboFee: total.websiteVrboFee,
+    expenses: total.expenses,
+    recurringCharges: total.recurringCharges,
+    ownerPayout: total.ownerPayout,
+    bookedNights: paidStays.reduce((sum, row) => sum + row.nights, 0),
+    stays: paidStays.length
+  };
+}
+
+function addAdminIncomeTotals(target: AdminIncomeTotals, source: AdminIncomeTotals) {
+  for (const key of Object.keys(target) as Array<keyof AdminIncomeTotals>) {
+    target[key] += source[key];
+  }
+  return target;
+}
+
+function propertyArea(property: string) {
+  const normalized = property.trim().toUpperCase();
+  if (normalized.startsWith("NMB")) return "North Myrtle Beach";
+  if (normalized.startsWith("MB")) return "Myrtle Beach";
+  if (normalized.startsWith("GC") || normalized.startsWith("GCSSB")) return "South Strand";
+  return "Other";
+}
+
+function adminRecurringForPeriod(owner: OwnerLike, request: Pick<ReportRequest, "month" | "year">) {
+  if (request.month) {
+    const period = periodFromRequest({ reportKey: "income", ...request });
+    return recurringExpenses(owner, period.startDate, period.endDate);
+  }
+
+  return monthLabels.flatMap((_, index) => {
+    const period = periodFromRequest({ reportKey: "income", month: index + 1, year: request.year });
+    return recurringExpenses(owner, period.startDate, period.endDate);
+  });
+}
+
+export function buildAdminIncomeData(
+  owners: OwnerLike[],
+  reservationsByOwner: Map<string, NormalizedReservation[]>,
+  expensesByOwner: Map<string, ExpenseLike[]>,
+  settings: AppSettings,
+  request: Pick<ReportRequest, "month" | "year">,
+  properties: PropertyLike[] = []
+): AdminIncomeData {
+  const reportRequest: ReportRequest = { reportKey: "income", month: request.month, year: request.year };
+  const period = periodFromRequest(reportRequest);
+  const ownerRows: AdminIncomeOwnerRow[] = [];
+  const propertyRows: AdminIncomePropertyRow[] = [];
+
+  for (const owner of owners) {
+    const ownerId = String(owner._id || owner.id || "");
+    const calculatedRows = cleanCanceledRows(
+      calculateRows(
+        filterRows(reservationsByOwner.get(ownerId) || [], reportRequest, period.startDate, period.endDate),
+        owner,
+        settings,
+        reportRequest
+      )
+    );
+    const ownerExpenses = filterExpenses(expensesByOwner.get(ownerId) || [], reportRequest, period.startDate, period.endDate);
+    const recurring = adminRecurringForPeriod(owner, request);
+    const ownerTotals = adminIncomeTotals(calculatedRows, ownerExpenses, recurring);
+    const isOwnerLevel = (expense: ExpenseLike) => ["", "owner", "recurring"].includes(lower(expense.property).trim());
+    const propertyNames = [
+      ...new Set([
+        ...(owner.properties || []).filter(Boolean),
+        ...calculatedRows.map((row) => row.property).filter(Boolean),
+        ...ownerExpenses.filter((expense) => !isOwnerLevel(expense)).map((expense) => expense.property)
+      ])
+    ].sort((a, b) => a.localeCompare(b));
+
+    ownerRows.push({
+      ownerId,
+      owner: owner.name,
+      ownerType: owner.type,
+      properties: propertyNames.length,
+      ...ownerTotals
+    });
+
+    for (const property of propertyNames) {
+      const propertyCalculatedRows = calculatedRows.filter((row) => row.property === property);
+      const propertyExpenses = ownerExpenses.filter((expense) => expense.property === property);
+      propertyRows.push({
+        ownerId,
+        owner: owner.name,
+        property,
+        address: propertyOfficialAddress(property, properties),
+        area: propertyArea(property),
+        ...adminIncomeTotals(propertyCalculatedRows, propertyExpenses)
+      });
+    }
+  }
+
+  const summary = ownerRows.reduce((sum, row) => addAdminIncomeTotals(sum, row), emptyAdminIncomeTotals());
+  const monthsToBuild = request.month ? [request.month] : monthLabels.map((_, index) => index + 1);
+  const monthly = monthsToBuild.map((month) => {
+    const monthRequest: ReportRequest = { reportKey: "income", month, year: request.year };
+    const monthPeriod = periodFromRequest(monthRequest);
+    const monthTotal = emptyAdminIncomeTotals();
+
+    for (const owner of owners) {
+      const ownerId = String(owner._id || owner.id || "");
+      const monthRows = cleanCanceledRows(
+        calculateRows(
+          filterRows(reservationsByOwner.get(ownerId) || [], monthRequest, monthPeriod.startDate, monthPeriod.endDate),
+          owner,
+          settings,
+          monthRequest
+        )
+      );
+      const monthExpenses = filterExpenses(expensesByOwner.get(ownerId) || [], monthRequest, monthPeriod.startDate, monthPeriod.endDate);
+      const monthRecurring = recurringExpenses(owner, monthPeriod.startDate, monthPeriod.endDate);
+      addAdminIncomeTotals(monthTotal, adminIncomeTotals(monthRows, monthExpenses, monthRecurring));
+    }
+
+    return { month, label: monthLabels[month - 1], ...monthTotal };
+  });
+
+  return {
+    periodLabel: period.label,
+    summary,
+    monthly,
+    owners: ownerRows.sort((a, b) => a.owner.localeCompare(b.owner)),
+    properties: propertyRows.sort((a, b) => a.area.localeCompare(b.area) || a.property.localeCompare(b.property))
   };
 }
 

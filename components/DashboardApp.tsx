@@ -21,8 +21,10 @@ import {
   Mail,
   Pencil,
   Printer,
-  Send
+  Send,
+  TrendingUp
 } from "lucide-react";
+import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
 import type { ReportKey, SessionUser } from "@/lib/types";
 
@@ -120,7 +122,7 @@ type EmailDraft = {
   reportLink: string;
 };
 
-type TabKey = "reports" | "owners" | "expenses" | "saved" | "settings";
+type TabKey = "reports" | "income" | "owners" | "expenses" | "saved" | "settings";
 
 const reportOptions: { key: ReportKey; label: string; adminOnly?: boolean }[] = [
   { key: "statement", label: "Statement" },
@@ -311,7 +313,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
   const tabs = [
     { key: "reports" as const, label: "Reports", icon: BarChart3 },
-    ...(isAdmin ? [{ key: "owners" as const, label: "Owners", icon: Building2 }] : []),
+    ...(isAdmin
+      ? [
+          { key: "income" as const, label: "Income", icon: TrendingUp },
+          { key: "owners" as const, label: "Owners", icon: Building2 }
+        ]
+      : []),
     { key: "expenses" as const, label: "Expenses", icon: CircleDollarSign },
     { key: "saved" as const, label: "Saved", icon: FileArchive },
     ...(isAdmin ? [{ key: "settings" as const, label: "Settings", icon: Settings }] : [])
@@ -1197,10 +1204,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         <header className="topbar">
           <div>
             <span>{isAdmin ? "Admin" : "Owner"} workspace</span>
-            <h1>{selectedOwner?.name || user.displayName || "Reports"}</h1>
+            <h1>{tab === "income" ? "Income" : selectedOwner?.name || user.displayName || "Reports"}</h1>
           </div>
           <div className="topbar-actions">
-            {isAdmin && (
+            {isAdmin && tab !== "income" && (
               <select value={selectedOwnerId} onChange={(event) => setSelectedOwnerId(event.target.value)}>
                 <option value="">All owners</option>
                 {visibleOwners.map((owner) => (
@@ -1341,6 +1348,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
             )}
           </section>
         )}
+
+        {tab === "income" && isAdmin && <AdminIncome />}
 
         {tab === "owners" && isAdmin && (
           <section className="split-view single-view">
