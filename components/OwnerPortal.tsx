@@ -38,6 +38,9 @@ type CalendarPricing = {
   configured: boolean;
   connected: boolean;
   rates: Array<{ date: string; rate: number; currency: string }>;
+  cached?: boolean;
+  stale?: boolean;
+  throttled?: boolean;
 };
 
 const monthNames = [
@@ -179,6 +182,10 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
           setRateNotice("Available rates need the Guesty pricing connection.");
         } else if (!response.connected) {
           setRateNotice("Available rates are not connected for this property yet.");
+        } else if (response.stale) {
+          setRateNotice("Showing the last saved rates while Guesty refreshes.");
+        } else if (response.throttled) {
+          setRateNotice("Guesty is temporarily limiting requests. Rates will refresh automatically.");
         }
       })
       .catch(() => {
