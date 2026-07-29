@@ -294,7 +294,12 @@ function editActions(
   `;
 }
 
-function totals(rows: CalculatedReservation[], expenses: ExpenseLike[], recurring: ExpenseLike[] = []) {
+function totals(
+  rows: CalculatedReservation[],
+  expenses: ExpenseLike[],
+  recurring: ExpenseLike[] = [],
+  ownerStayTotal = 0
+) {
   const expenseTotal = expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const recurringTotal = recurring.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const chargeTotal = expenseTotal + recurringTotal;
@@ -307,10 +312,10 @@ function totals(rows: CalculatedReservation[], expenses: ExpenseLike[], recurrin
     taxes: rows.reduce((sum, row) => sum + row.taxes, 0),
     websiteVrboFee: rows.reduce((sum, row) => sum + row.websiteVrboFee, 0),
     pmc: rows.reduce((sum, row) => sum + row.pmc, 0),
-    ownerPayout: rows.reduce((sum, row) => sum + row.ownerPayoutBeforeExpenses, 0) - chargeTotal,
+    ownerPayout: rows.reduce((sum, row) => sum + row.ownerPayoutBeforeExpenses, 0) - chargeTotal - ownerStayTotal,
     expenses: expenseTotal,
     recurringCharges: recurringTotal,
-    draftDue: rows.reduce((sum, row) => sum + row.pmc + row.cleaning + row.websiteVrboFee, 0) + chargeTotal
+    draftDue: rows.reduce((sum, row) => sum + row.pmc + row.cleaning + row.websiteVrboFee, 0) + chargeTotal + ownerStayTotal
   };
 }
 
@@ -807,7 +812,9 @@ function expensesTable(
 }
 
 function propertyStatementSummary(owner: OwnerLike, rows: CalculatedReservation[], expenses: ExpenseLike[]) {
-  const total = totals(rows, expenses);
+  const ownerStayRows = rows.filter((row) => row.isOwnerStay);
+  const ownerStayTotal = ownerStayRows.reduce((sum, row) => sum + ownerStayCharge(row), 0);
+  const total = totals(rows, expenses, [], ownerStayTotal);
   const summary = owner.type === "draft"
     ? {
         grossPayout: total.grossPayout,
@@ -919,9 +926,9 @@ export function buildOwnerReport(
     : calculatedRows;
   const filteredExpenses = filterExpenses(rawExpenses, request, period.startDate, period.endDate);
   const recurring = recurringExpenses(owner, period.startDate, period.endDate);
-  const total = totals(reportRows, filteredExpenses, recurring);
   const ownerStayRows = reportRows.filter((row) => row.isOwnerStay);
   const ownerStayTotal = ownerStayRows.reduce((sum, row) => sum + ownerStayCharge(row), 0);
+  const total = totals(reportRows, filteredExpenses, recurring, ownerStayTotal);
   const name = owner.name || "Owner";
 
   if (request.reportKey === "income") {
@@ -1190,7 +1197,9 @@ export function buildSummaryReport(
     const reportRows = calculateRows(filterRows(reservationsByOwner.get(ownerId) || [], request, period.startDate, period.endDate), owner, settings, request);
     const expenses = filterExpenses(expensesByOwner.get(ownerId) || [], request, period.startDate, period.endDate);
     const recurring = recurringExpenses(owner, period.startDate, period.endDate);
-    const total = totals(reportRows, expenses, recurring);
+    const ownerStayRows = reportRows.filter((row) => row.isOwnerStay);
+    const ownerStayTotal = ownerStayRows.reduce((sum, row) => sum + ownerStayCharge(row), 0);
+    const total = totals(reportRows, expenses, recurring, ownerStayTotal);
     const salesCommission = total.pmc * (Number(owner.salesFeePercent || 0) / 100);
     return {
       owner,
