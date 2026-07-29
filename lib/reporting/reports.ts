@@ -303,6 +303,8 @@ function totals(
   const expenseTotal = expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const recurringTotal = recurring.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const chargeTotal = expenseTotal + recurringTotal;
+  const guestRows = rows.filter((row) => !row.isOwnerStay);
+  const ownerPayoutBeforeCharges = guestRows.reduce((sum, row) => sum + row.ownerPayoutBeforeExpenses, 0);
   return {
     reservations: rows.length,
     bookedNights: rows.reduce((sum, row) => sum + row.nights, 0),
@@ -312,7 +314,7 @@ function totals(
     taxes: rows.reduce((sum, row) => sum + row.taxes, 0),
     websiteVrboFee: rows.reduce((sum, row) => sum + row.websiteVrboFee, 0),
     pmc: rows.reduce((sum, row) => sum + row.pmc, 0),
-    ownerPayout: rows.reduce((sum, row) => sum + row.ownerPayoutBeforeExpenses, 0) - chargeTotal - ownerStayTotal,
+    ownerPayout: ownerPayoutBeforeCharges - chargeTotal - ownerStayTotal,
     expenses: expenseTotal,
     recurringCharges: recurringTotal,
     draftDue: rows.reduce((sum, row) => sum + row.pmc + row.cleaning + row.websiteVrboFee, 0) + chargeTotal + ownerStayTotal
