@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { asPlain } from "@/lib/http";
 import { connectDb } from "@/lib/db";
 import { SavedReport } from "@/lib/models";
-import { stripReportEditControls } from "@/lib/reporting/sanitize";
+import { prepareSharedReportHtml } from "@/lib/reporting/sanitize";
 
 export default async function PrintReportPage({
   params,
@@ -24,7 +24,10 @@ export default async function PrintReportPage({
           Download PDF
         </button>
       </div>
-      <section className="print-report-document" dangerouslySetInnerHTML={{ __html: stripReportEditControls(savedReport.htmlSnapshot) }} />
+      <section
+        className="print-report-document"
+        dangerouslySetInnerHTML={{ __html: prepareSharedReportHtml(savedReport.htmlSnapshot, shareId) }}
+      />
       <script
         dangerouslySetInnerHTML={{
           __html: `
