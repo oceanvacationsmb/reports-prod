@@ -114,7 +114,7 @@ function downloadFilename(response: Response, fallback: string) {
 export function OwnerPortal({ user }: { user: SessionUser }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(String(today.getMonth() + 1));
+  const [month, setMonth] = useState("full-year");
   const [calendarYear, setCalendarYear] = useState(today.getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(today.getMonth() + 1);
   const [calendarProperty, setCalendarProperty] = useState("");
