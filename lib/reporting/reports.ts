@@ -858,7 +858,6 @@ function byProperty(
   const isOwnerLevel = (expense: ExpenseLike) => ["", "owner", "recurring"].includes(lower(expense.property).trim());
   const keys = [
     ...new Set([
-      ...(owner.properties || []).filter(Boolean),
       ...rows.map((row) => row.property || "Unassigned"),
       ...expenses.filter((expense) => !isOwnerLevel(expense)).map((expense) => expense.property)
     ])
