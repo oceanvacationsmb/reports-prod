@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { assertAdmin, assertOwnerAccess, assertUser } from "@/lib/auth";
 import { connectDb } from "@/lib/db";
-import { Expense } from "@/lib/models";
+import { Expense, Owner } from "@/lib/models";
 import { asPlain, fail, ok } from "@/lib/http";
 
 const schema = z.object({
@@ -16,6 +16,20 @@ const schema = z.object({
   month: z.coerce.number().min(1).max(12),
   year: z.coerce.number()
 });
+
+function normalized(value: string) {
+  return value.trim().toLowerCase();
+}
+
+async function assertPropertyBelongsToOwner(ownerId: string, property: string) {
+  if (normalized(property) === "owner") return;
+  const owner = await Owner.findById(ownerId).select({ properties: 1 }).lean();
+  if (!owner) throw Object.assign(new Error("Owner not found."), { status: 404 });
+  const belongsToOwner = (owner.properties || []).some((item: string) => normalized(item) === normalized(property));
+  if (!belongsToOwner) {
+    throw Object.assign(new Error("That property is not assigned to the selected owner."), { status: 400 });
+  }
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -37,6 +51,7 @@ export async function POST(req: NextRequest) {
     assertAdmin(req);
     await connectDb();
     const body = schema.parse(await req.json());
+    await assertPropertyBelongsToOwner(body.ownerId, body.property);
     const expense = await Expense.create(body);
     return ok({ expense: asPlain(expense) }, { status: 201 });
   } catch (error) {

@@ -33,7 +33,8 @@ async function loadOwnerRows(owner: OwnerLike, query: { startDate: string; endDa
     skip: 0,
     startDate: query.startDate,
     endDate: query.endDate,
-    property: query.property
+    property: query.property,
+    allProperties: true
   });
 }
 
