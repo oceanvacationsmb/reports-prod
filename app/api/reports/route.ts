@@ -28,12 +28,20 @@ function isAggregateOwner(owner: OwnerLike) {
 
 async function loadOwnerRows(owner: OwnerLike, query: { startDate: string; endDate: string; property?: string }) {
   if (!owner.guestyReportUrl && !owner.guestyAllPropertiesUrl) return [];
+
+  // Use the same full-year Guesty snapshot as the owner portal, then let the
+  // report builder apply its month/property filters. Separate monthly cache
+  // entries can otherwise disagree with the portal after Guesty data changes.
+  const startYear = Number(query.startDate.slice(0, 4));
+  const endYear = Number(query.endDate.slice(0, 4));
+  const firstYear = Number.isFinite(startYear) ? startYear : new Date().getUTCFullYear();
+  const lastYear = Number.isFinite(endYear) ? endYear : firstYear;
+
   return getGuestyReservations(owner, {
     limit: 1000,
     skip: 0,
-    startDate: query.startDate,
-    endDate: query.endDate,
-    property: query.property,
+    startDate: `${Math.min(firstYear, lastYear)}-01-01`,
+    endDate: `${Math.max(firstYear, lastYear)}-12-31`,
     allProperties: true
   });
 }
