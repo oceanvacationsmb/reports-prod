@@ -12,7 +12,7 @@ import type { ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike } from
 export const runtime = "nodejs";
 
 const schema = z.object({
-  reportKey: z.enum(["statement", "income", "gri", "1099", "summary", "allOwnersTax"]),
+  reportKey: z.enum(["statement", "splitCleaning", "income", "gri", "1099", "summary", "allOwnersTax"]),
   ownerId: z.string().optional(),
   property: z.string().optional(),
   month: z.coerce.number().min(1).max(12).optional(),
@@ -55,6 +55,9 @@ export async function POST(req: NextRequest) {
       throw Object.assign(new Error("Property is required for GRI reports."), { status: 400 });
     }
     const period = periodFromRequest(body);
+    if (body.reportKey === "splitCleaning" && period.startDate > period.endDate) {
+      throw Object.assign(new Error("From Date must be on or before To Date."), { status: 400 });
+    }
     const settings = await getSettings();
 
     if (body.reportKey === "summary" || body.reportKey === "allOwnersTax") {

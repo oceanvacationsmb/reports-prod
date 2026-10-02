@@ -125,6 +125,12 @@ function parseDate(value?: string) {
 }
 
 export function periodFromRequest(request: ReportRequest) {
+  if (request.reportKey === "splitCleaning") {
+    const startDate = request.startDate || `${request.year || new Date().getUTCFullYear()}-01-01`;
+    const endDate = request.endDate || `${request.year || new Date().getUTCFullYear()}-12-31`;
+    return { startDate, endDate, label: `${formatShortDate(startDate)} - ${formatShortDate(endDate)}` };
+  }
+
   if (request.startDate && request.endDate) {
     return { startDate: request.startDate, endDate: request.endDate, label: `${request.startDate} to ${request.endDate}` };
   }
@@ -931,6 +937,36 @@ export function buildOwnerReport(
   const ownerStayTotal = ownerStayRows.reduce((sum, row) => sum + ownerStayCharge(row), 0);
   const total = totals(reportRows, filteredExpenses, recurring, ownerStayTotal);
   const name = owner.name || "Owner";
+
+  if (request.reportKey === "splitCleaning") {
+    const cleaningTotal = reportRows.reduce((sum, row) => sum + row.cleaning, 0);
+    const reservationRows = reportRows.map((row) => `
+      <tr>
+        <td>${escapeHtml(row.property)}</td>
+        <td>${escapeHtml(row.guestName || row.confirmationCode || "Reservation")}</td>
+        <td>${escapeHtml(formatShortDate(row.checkIn))}</td>
+        <td>${escapeHtml(formatShortDate(row.checkOut))}</td>
+        <td>${formatMoney(row.cleaning)}</td>
+      </tr>`).join("");
+    const body = `
+      <section class="property-section">
+        <header class="property-header"><div><span>Reservations</span><h2>Cleaning Fees</h2></div></header>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Property</th><th>Guest</th><th>Check In</th><th>Check Out</th><th>Cleaning Fee</th></tr></thead>
+            <tbody>${reservationRows || '<tr><td colspan="5">No reservations found for this period.</td></tr>'}</tbody>
+            <tfoot><tr><th colspan="4">Total Cleaning Fees</th><th>${formatMoney(cleaningTotal)}</th></tr></tfoot>
+          </table>
+        </div>
+      </section>`;
+    const summary = { reservations: reportRows.length, totalCleaningFees: cleaningTotal };
+    return {
+      title: `${name} Split Cleaning Report`,
+      periodLabel: period.label,
+      summary,
+      html: reportShell(`${name} Split Cleaning Report`, period.label, body, summary)
+    };
+  }
 
   if (request.reportKey === "income") {
     const body = request.property

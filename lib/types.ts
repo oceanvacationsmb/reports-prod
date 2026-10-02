@@ -1,6 +1,6 @@
 export type Role = "admin" | "owner";
 export type OwnerType = "draft" | "payout" | "split";
-export type ReportKey = "statement" | "income" | "gri" | "1099" | "summary" | "allOwnersTax";
+export type ReportKey = "statement" | "splitCleaning" | "income" | "gri" | "1099" | "summary" | "allOwnersTax";
 
 export type SessionUser = {
   id: string;

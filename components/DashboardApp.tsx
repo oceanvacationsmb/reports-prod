@@ -126,6 +126,7 @@ type TabKey = "reports" | "income" | "owners" | "expenses" | "saved" | "settings
 
 const reportOptions: { key: ReportKey; label: string; adminOnly?: boolean }[] = [
   { key: "statement", label: "Statement" },
+  { key: "splitCleaning", label: "Split Cleaning" },
   { key: "income", label: "Income" },
   { key: "gri", label: "GRI" },
   { key: "1099", label: "1099" },
@@ -233,7 +234,8 @@ const emptyExpenseTypeForm = {
   name: ""
 };
 
-const currentYear = new Date().getFullYear();
+const currentDate = new Date();
+const currentYear = currentDate.getFullYear();
 const reportYearOptions = [currentYear - 1, currentYear, currentYear + 1];
 const ownerTaxFlagOptions = ["SC", "HC", "GTC", "NMB", "MB"];
 const emptyExpenseForm = {
@@ -272,6 +274,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     reportKey: "statement" as ReportKey,
     month: String(new Date().getMonth() + 1),
     year: String(currentYear),
+    startDate: `${currentYear}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-01`,
+    endDate: `${currentYear}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${String(currentDate.getDate()).padStart(2, "0")}`,
     property: "",
     calculationSource: "reports" as "reports" | "portal"
   });
@@ -296,6 +300,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const visibleOwners = useMemo(() => owners.filter((owner) => !isAggregateOwner(owner)), [owners]);
   const reportSupportsFullYear = reportForm.reportKey === "income" || reportForm.reportKey === "gri" || reportForm.reportKey === "1099";
   const reportRequiresFullYear = reportForm.reportKey === "1099";
+  const reportUsesDateRange = reportForm.reportKey === "splitCleaning";
   const reportSupportsPropertyFilter = reportForm.reportKey === "income" || reportForm.reportKey === "gri";
   const reportRequiresProperty = reportForm.reportKey === "gri";
   const selectedOwner = useMemo(
@@ -603,10 +608,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     setCurrentSavedReport(null);
     try {
       const month = reportForm.month === "full-year" ? undefined : Number(reportForm.month);
+      const { startDate, endDate, ...form } = reportForm;
       const body = {
-        ...reportForm,
+        ...form,
+        ...(reportUsesDateRange ? { startDate, endDate } : {}),
         ownerId: isAdmin ? selectedOwnerId : user.ownerId,
-        month,
+        month: reportUsesDateRange ? undefined : month,
         year: Number(reportForm.year)
       };
       const data = await api<{ report: ReportResponse }>("/api/reports", {
@@ -808,8 +815,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       const ownerEmail = selectedOwner?.email || "";
       setEmailDraft({
         to: ownerEmail,
-        subject: "Your Ocean Vacations Statement is Ready",
-        message: `Hi,\n\nHere is your statement for ${currentReport?.periodLabel || (reportForm.month === "full-year" ? reportForm.year : `${months[Number(reportForm.month) - 1]} ${reportForm.year}`)}.\nThe transfer will be processed on ${nextTransferDate()}.\n\nThank you,\nOcean Vacations.`,
+        subject: `Your Ocean Vacations ${reportForm.reportKey === "splitCleaning" ? "Cleaning Fee Report" : "Statement"} is Ready`,
+        message: reportForm.reportKey === "splitCleaning"
+          ? `Hi,\n\nHere is your cleaning-fee report for ${currentReport?.periodLabel || `${reportForm.startDate} - ${reportForm.endDate}`}.\n\nThank you,\nOcean Vacations.`
+          : `Hi,\n\nHere is your statement for ${currentReport?.periodLabel || (reportForm.month === "full-year" ? reportForm.year : `${months[Number(reportForm.month) - 1]} ${reportForm.year}`)}.\nThe transfer will be processed on ${nextTransferDate()}.\n\nThank you,\nOcean Vacations.`,
         reportLink: link
       });
     } catch (err) {
@@ -1262,7 +1271,18 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     ))}
                 </select>
               </label>
-              <label>
+              {reportUsesDateRange ? (
+                <>
+                  <label>
+                    From Date
+                    <input type="date" value={reportForm.startDate} onChange={(event) => setReportForm({ ...reportForm, startDate: event.target.value })} required />
+                  </label>
+                  <label>
+                    To Date
+                    <input type="date" value={reportForm.endDate} onChange={(event) => setReportForm({ ...reportForm, endDate: event.target.value })} required />
+                  </label>
+                </>
+              ) : <label>
                 Month
                 <select
                   value={reportRequiresFullYear ? "full-year" : reportForm.month}
@@ -1276,17 +1296,15 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </option>
                   ))}
                 </select>
-              </label>
-              <label>
+              </label>}
+              {!reportUsesDateRange && <label>
                 Year
                 <select value={reportForm.year} onChange={(event) => setReportForm({ ...reportForm, year: event.target.value })}>
                   {reportYearOptions.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
+                    <option key={year} value={year}>{year}</option>
                   ))}
                 </select>
-              </label>
+              </label>}
               {reportSupportsPropertyFilter && (
                 <label>
                   Property
