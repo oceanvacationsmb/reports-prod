@@ -387,6 +387,24 @@ function propertyOfficialAddress(propertyName: string, properties: PropertyLike[
   return property?.reportAddress?.trim() || "";
 }
 
+export function griPropertyAddress(
+  propertyName: string,
+  properties: PropertyLike[],
+  rows: Array<{ property?: string; listingAddress?: string }>
+) {
+  const official = propertyOfficialAddress(propertyName, properties);
+  if (official) return official;
+  const counts = new Map<string, number>();
+  const target = propertyName.trim().toLowerCase();
+  for (const row of rows) {
+    if ((row.property || "").trim().toLowerCase() !== target) continue;
+    const address = row.listingAddress?.trim();
+    if (!address) continue;
+    counts.set(address, (counts.get(address) || 0) + 1);
+  }
+  return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] || "";
+}
+
 function reportTaxRows(owner: OwnerLike, rows: CalculatedReservation[], properties: PropertyLike[]) {
   if (owner.type !== "payout") return [];
   const grouped = new Map<string, { property: string; amountToReport: number; totalTax: number }>();
@@ -661,8 +679,8 @@ function griReservationTable(rows: CalculatedReservation[]) {
 function griReportDocument(property: string, propertyAddress: string, rows: CalculatedReservation[], year: number, periodLabel: string) {
   const grossPayout = rows.reduce((sum, row) => sum + row.grossPayout, 0);
   const reportDate = new Date().toLocaleDateString("en-US");
-  const hasOfficialAddress = Boolean(propertyAddress.trim());
-  const displayAddress = hasOfficialAddress ? propertyAddress : "Property address needed";
+  const address = propertyAddress.trim();
+  const displayAddress = address || property;
 
   return `
     <article class="report-document gri-document">
@@ -675,10 +693,10 @@ function griReportDocument(property: string, propertyAddress: string, rows: Calc
           <span>843-222-6516</span>
         </div>
       </header>
-      <section class="gri-property-card${hasOfficialAddress ? "" : " missing-address"}">
+      <section class="gri-property-card${address ? "" : " missing-address"}">
         <span>Property Address</span>
         <strong>${escapeHtml(displayAddress)}</strong>
-        ${hasOfficialAddress ? "" : `<small>Add the official report address for ${escapeHtml(property)} in Settings > Properties before sending this report.</small>`}
+        ${address ? "" : `<small class="gri-address-hint">Add the official report address for ${escapeHtml(property)} in Settings &gt; Properties before sending this report.</small>`}
       </section>
       <section class="metric-grid">
         <div class="metric"><span>Report Date</span><strong>${escapeHtml(reportDate)}</strong></div>
@@ -1004,8 +1022,8 @@ export function buildOwnerReport(
   }
 
   if (request.reportKey === "gri") {
-    const property = request.property || rows[0]?.property || "Property";
-    const officialAddress = propertyOfficialAddress(property, properties);
+    const property = request.property || reportRows[0]?.property || rows[0]?.property || "Property";
+    const officialAddress = griPropertyAddress(property, properties, reportRows);
     const body = griReportDocument(property, officialAddress, reportRows, request.year || new Date().getUTCFullYear(), period.label);
     return {
       title: officialAddress ? `${officialAddress} GRI Report` : "Gross Rental Income Report",

@@ -134,6 +134,18 @@ function propertyName(row: AnyRecord) {
   );
 }
 
+function listingAddress(row: AnyRecord) {
+  return text(
+    firstNonNull(row, [
+      "listing.address.full",
+      "listing.address",
+      "property.address.full",
+      "address.full",
+      "ADDRESS"
+    ])
+  );
+}
+
 function guestName(row: AnyRecord) {
   const guest = firstNonNull(row, [
     "guest.fullName",
@@ -195,6 +207,7 @@ export function normalizeReservation(row: AnyRecord, index = 0): NormalizedReser
   return {
     id: text(firstNonNull(row, ["_id", "id", "reservationId", "confirmationCode"])) || `${confirmationCode || "row"}-${index}`,
     property: propertyName(row),
+    listingAddress: listingAddress(row),
     guestName: guestName(row),
     checkIn,
     checkOut,

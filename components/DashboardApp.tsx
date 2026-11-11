@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
+import { reportPropertyChoices, reportYearChoices } from "@/lib/reporting/report-options";
+import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
 import { pmcFractionFromInput, percentPointsFromInput, storedPmcFraction } from "@/lib/reporting/rates";
 import type { ReportKey, SessionUser } from "@/lib/types";
 
@@ -237,7 +239,7 @@ const emptyExpenseTypeForm = {
 
 const currentDate = new Date();
 const currentYear = currentDate.getFullYear();
-const reportYearOptions = [currentYear - 1, currentYear, currentYear + 1];
+const reportYearOptions = reportYearChoices(currentDate).years;
 const ownerTaxFlagOptions = ["SC", "HC", "GTC", "NMB", "MB"];
 const emptyExpenseForm = {
   property: "",
@@ -288,6 +290,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [vendorForm, setVendorForm] = useState(emptyVendorForm);
   const [expenseTypeForm, setExpenseTypeForm] = useState(emptyExpenseTypeForm);
   const [manageExpenseLists, setManageExpenseLists] = useState(false);
+  const [reservationProperties, setReservationProperties] = useState<string[]>([]);
   const [currentReport, setCurrentReport] = useState<ReportResponse | null>(null);
   const [currentSavedReport, setCurrentSavedReport] = useState<SavedReport | null>(null);
   const [emailDraft, setEmailDraft] = useState<EmailDraft | null>(null);
@@ -308,10 +311,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     () => visibleOwners.find((owner) => owner._id === selectedOwnerId) || visibleOwners[0],
     [visibleOwners, selectedOwnerId]
   );
-  const reportPropertyOptions = useMemo(
-    () => Array.from(new Set((selectedOwner?.properties || []).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    [selectedOwner]
-  );
+  const reportPropertyOptions = useMemo(() => {
+    const expenseNames = expenses
+      .filter((expense) => String(expense.ownerId) === String(selectedOwner?._id || ""))
+      .map((expense) => expense.property);
+    return reportPropertyChoices(selectedOwner?.properties || [], reservationProperties, expenseNames);
+  }, [selectedOwner, reservationProperties, expenses]);
   const ownerSavedReports = useMemo(
     () => savedReports.filter((report) => String(report.ownerId || "") === String(selectedOwner?._id || "")),
     [savedReports, selectedOwner]
@@ -367,6 +372,44 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const ownerId = selectedOwner?._id;
+    if (!ownerId || (!selectedOwner?.guestyReportUrl && !selectedOwner?.guestyAllPropertiesUrl)) {
+      setReservationProperties([]);
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    const query = ownerReportReservationQuery(currentYear);
+    const params = new URLSearchParams({
+      ownerId,
+      allProperties: "true",
+      startDate: query.startDate,
+      endDate: query.endDate,
+      limit: String(query.limit)
+    });
+    api<{ rows: Array<{ property?: string }> }>(`/api/guesty/reservations?${params}`, { signal: controller.signal })
+      .then((payload) => {
+        if (active) setReservationProperties((payload.rows || []).map((row) => row.property || ""));
+      })
+      .catch((requestError) => {
+        if (!active || (requestError instanceof DOMException && requestError.name === "AbortError")) return;
+        setReservationProperties([]);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [selectedOwner?._id, selectedOwner?.guestyReportUrl, selectedOwner?.guestyAllPropertiesUrl]);
+
+  useEffect(() => {
+    if (reportForm.reportKey !== "gri") return;
+    if (reportForm.property && reportPropertyOptions.includes(reportForm.property)) return;
+    const nextProperty = reportPropertyOptions[0] || "";
+    if (nextProperty === reportForm.property) return;
+    setReportForm((current) => ({ ...current, property: nextProperty }));
+  }, [reportForm.reportKey, reportForm.property, reportPropertyOptions]);
 
   useEffect(() => {
     if (tab !== "owners" || creatingOwner || !selectedOwner?._id || ownerEditingId === selectedOwner._id) return;

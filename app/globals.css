@@ -1084,6 +1084,11 @@ textarea:focus {
   background: #fff8f3;
 }
 
+.shared-report-screen .gri-address-hint,
+.print-report-screen .gri-address-hint {
+  display: none;
+}
+
 .property-section {
   margin-top: 28px;
   padding-top: 18px;
@@ -1700,8 +1705,14 @@ tr:last-child td {
   .modal-backdrop,
   .side-nav,
   .topbar,
-  .report-actions {
+  .report-actions,
+  .gri-address-hint {
     display: none !important;
+  }
+
+  .gri-property-card.missing-address {
+    border-color: rgba(16, 38, 34, 0.24);
+    background: #fff;
   }
 
   .print-report-screen,
