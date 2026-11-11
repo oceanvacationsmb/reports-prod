@@ -5,7 +5,8 @@ import { connectDb } from "@/lib/db";
 import { getGuestyReservations } from "@/lib/guesty";
 import { asPlain, fail, ok } from "@/lib/http";
 import { Expense, Owner, Property } from "@/lib/models";
-import { buildAdminIncomeData, periodFromRequest } from "@/lib/reporting/reports";
+import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
+import { buildAdminIncomeData } from "@/lib/reporting/reports";
 import { getSettings } from "@/lib/settings";
 import type { ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike } from "@/lib/types";
 
@@ -20,6 +21,34 @@ function isAggregateOwner(owner: OwnerLike) {
   return owner.name.trim().toLowerCase() === "all properties";
 }
 
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const current = nextIndex;
+      nextIndex += 1;
+      results[current] = await mapper(items[current]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
+async function loadIncomeReservations(owner: OwnerLike, year: number) {
+  const query = ownerReportReservationQuery(year);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await getGuestyReservations(owner, query);
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw lastError;
+}
+
 export async function GET(req: NextRequest) {
   try {
     assertAdmin(req);
@@ -28,7 +57,6 @@ export async function GET(req: NextRequest) {
       month: req.nextUrl.searchParams.get("month") || undefined,
       year: req.nextUrl.searchParams.get("year")
     });
-    const period = periodFromRequest({ reportKey: "income", ...query });
     const [ownerDocuments, expenseDocuments, propertyDocuments, settings] = await Promise.all([
       Owner.find().sort({ name: 1 }).lean(),
       Expense.find({ year: query.year, ...(query.month ? { month: query.month } : {}) }).lean(),
@@ -42,31 +70,22 @@ export async function GET(req: NextRequest) {
     const expensesByOwner = new Map<string, ExpenseLike[]>();
     const warnings: string[] = [];
 
-    await Promise.all(
-      owners.map(async (owner) => {
-        const ownerId = String(owner._id || owner.id || "");
-        expensesByOwner.set(ownerId, expenses.filter((expense) => String(expense.ownerId) === ownerId));
-        if (!owner.guestyReportUrl && !owner.guestyAllPropertiesUrl) {
-          reservationsByOwner.set(ownerId, []);
-          warnings.push(`${owner.name}: Guesty report URL is not configured.`);
-          return;
-        }
+    await mapWithConcurrency(owners, 4, async (owner) => {
+      const ownerId = String(owner._id || owner.id || "");
+      expensesByOwner.set(ownerId, expenses.filter((expense) => String(expense.ownerId) === ownerId));
+      if (!owner.guestyReportUrl && !owner.guestyAllPropertiesUrl) {
+        reservationsByOwner.set(ownerId, []);
+        warnings.push(`${owner.name}: Guesty report URL is not configured.`);
+        return;
+      }
 
-        try {
-          const rows = await getGuestyReservations(owner, {
-            limit: 1000,
-            skip: 0,
-            startDate: period.startDate,
-            endDate: period.endDate,
-            allProperties: Boolean(owner.guestyAllPropertiesUrl)
-          });
-          reservationsByOwner.set(ownerId, rows);
-        } catch (error) {
-          reservationsByOwner.set(ownerId, []);
-          warnings.push(`${owner.name}: ${error instanceof Error ? error.message : "Reservation data could not be loaded."}`);
-        }
-      })
-    );
+      try {
+        reservationsByOwner.set(ownerId, await loadIncomeReservations(owner, query.year));
+      } catch (error) {
+        reservationsByOwner.set(ownerId, []);
+        warnings.push(`${owner.name}: ${error instanceof Error ? error.message : "Reservation data could not be loaded."}`);
+      }
+    });
 
     const income = buildAdminIncomeData(owners, reservationsByOwner, expensesByOwner, settings, query, properties);
     return ok({ income, warnings });

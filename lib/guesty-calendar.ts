@@ -4,6 +4,7 @@ import { getGuestyReservations } from "@/lib/guesty";
 import { asPlain } from "@/lib/http";
 import { Owner, Property, Setting } from "@/lib/models";
 import { ownerPortalPeriod } from "@/lib/owner-portal";
+import { reservationQueryForPeriod } from "@/lib/reporting/reservation-query";
 import type { NormalizedReservation, OwnerLike } from "@/lib/types";
 
 type GuestyToken = {
@@ -537,13 +538,7 @@ export async function loadOwnerCalendarRates(ownerId: string, property: string, 
 
   const fullYear = ownerPortalPeriod(year);
   const rows = owner.guestyReportUrl || owner.guestyAllPropertiesUrl
-    ? await getGuestyReservations(owner, {
-        limit: 1000,
-        skip: 0,
-        startDate: fullYear.startDate,
-        endDate: fullYear.endDate,
-        allProperties: true
-      })
+    ? await getGuestyReservations(owner, reservationQueryForPeriod(fullYear.startDate, fullYear.endDate))
     : [];
   const normalizedProperty = property.trim().toLowerCase();
   let listingId = rows

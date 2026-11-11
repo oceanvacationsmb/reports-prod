@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
+import { pmcFractionFromInput, percentPointsFromInput, storedPmcFraction } from "@/lib/reporting/rates";
 import type { ReportKey, SessionUser } from "@/lib/types";
 
 type Owner = {
@@ -396,7 +397,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       name: owner.name || "",
       email: owner.email || "",
       type: owner.type || "draft",
-      percent: String(owner.percent || 0),
+      percent: String(storedPmcFraction(owner.percent)),
       splitOwnerPercent: String(owner.splitOwnerPercent || 0),
       salesFeePercent: String(owner.salesFeePercent || 0),
       cleaningFee: String(owner.cleaningFee || 0),
@@ -446,9 +447,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         name: ownerForm.name,
         email: ownerForm.email,
         type: ownerForm.type,
-        percent: Number(ownerForm.percent || 0),
-        splitOwnerPercent: Number(ownerForm.splitOwnerPercent || 0),
-        salesFeePercent: Number(ownerForm.salesFeePercent || 0),
+        percent: pmcFractionFromInput(ownerForm.percent),
+        splitOwnerPercent: percentPointsFromInput(ownerForm.splitOwnerPercent, "Split owner percent"),
+        salesFeePercent: percentPointsFromInput(ownerForm.salesFeePercent, "Sales fee percent"),
         cleaningFee: Number(ownerForm.cleaningFee || 0),
         guestyReportUrl: ownerForm.guestyReportUrl,
         guestyAllPropertiesUrl: ownerForm.guestyAllPropertiesUrl,
@@ -644,7 +645,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     if (!selectedOwner) return current;
     const pmcRate = selectedOwner.type === "split"
       ? 1 - Number(selectedOwner.splitOwnerPercent || 0) / 100
-      : Number(selectedOwner.percent || 0);
+      : storedPmcFraction(selectedOwner.percent);
     const pmc = netAccommodation * pmcRate;
     const ownerPayout = selectedOwner.type === "split"
       ? netAccommodation * (Number(selectedOwner.splitOwnerPercent || 0) / 100)
@@ -1402,6 +1403,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 <label>
                   PMC percent
                   <input value={ownerForm.percent} onChange={(event) => setOwnerForm({ ...ownerForm, percent: event.target.value })} inputMode="decimal" />
+                  <span className="muted-copy">Enter 12 or 0.12 for 12%. A rate above 100% is rejected.</span>
                 </label>
                 <label>
                   Sales fee percent

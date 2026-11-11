@@ -1186,6 +1186,24 @@ export function buildAdminIncomeData(
     }
   }
 
+  const representedProperties = new Set(propertyRows.map((row) => row.property.trim().toLowerCase()));
+  for (const property of properties) {
+    const name = property.name?.trim();
+    if (!name || representedProperties.has(name.toLowerCase())) continue;
+    representedProperties.add(name.toLowerCase());
+    const owner = owners.find((item) =>
+      (item.properties || []).some((candidate) => candidate.trim().toLowerCase() === name.toLowerCase())
+    );
+    propertyRows.push({
+      ownerId: owner ? String(owner._id || owner.id || "") : "",
+      owner: owner?.name || "Unassigned",
+      property: name,
+      address: property.reportAddress?.trim() || "",
+      area: propertyArea(name),
+      ...emptyAdminIncomeTotals()
+    });
+  }
+
   const summary = ownerRows.reduce((sum, row) => addAdminIncomeTotals(sum, row), emptyAdminIncomeTotals());
   const monthsToBuild = request.month ? [request.month] : monthLabels.map((_, index) => index + 1);
   const monthly = monthsToBuild.map((month) => {
