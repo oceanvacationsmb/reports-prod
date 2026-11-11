@@ -144,7 +144,10 @@ export async function getGuestyReservations(owner: OwnerLike, query: GuestyQuery
 
   const payload = await response.json();
   const normalized = normalizeGuestyPayload(payload);
-  const ttlMinutes = Math.max(1, settings.guestyCacheTtlMinutes || 30);
+  // An empty snapshot must not stick for the normal TTL. A new owner's report can be
+  // empty for a few minutes and then receive the first stays; income and statements
+  // share this cache and would otherwise keep disagreeing.
+  const ttlMinutes = normalized.length ? Math.max(1, settings.guestyCacheTtlMinutes || 30) : 1;
   const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
 
   await GuestyCache.updateOne(

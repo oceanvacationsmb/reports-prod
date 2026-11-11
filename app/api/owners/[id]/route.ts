@@ -4,6 +4,7 @@ import { assertAdmin, assertOwnerAccess, assertUser, hashPassword } from "@/lib/
 import { connectDb } from "@/lib/db";
 import { Owner, User } from "@/lib/models";
 import { asPlain, fail, ok } from "@/lib/http";
+import { normalizeOwnerRateInput } from "@/lib/reporting/rates";
 
 const taxFlags = z.object({
   SC: z.boolean().optional(),
@@ -53,7 +54,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { id } = await params;
     assertAdmin(req);
     await connectDb();
-    const body = patchSchema.parse(await req.json());
+    const body = patchSchema.parse(normalizeOwnerRateInput(await req.json()));
     const { portalPassword, ...updates } = body;
     const owner = await Owner.findByIdAndUpdate(id, { $set: updates }, { new: true }).lean();
     if (!owner) throw Object.assign(new Error("Owner not found."), { status: 404 });

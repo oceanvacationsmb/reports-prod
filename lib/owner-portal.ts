@@ -1,5 +1,6 @@
 import { connectDb } from "@/lib/db";
 import { getGuestyReservations } from "@/lib/guesty";
+import { reservationQueryForPeriod } from "@/lib/reporting/reservation-query";
 import { asPlain } from "@/lib/http";
 import { Expense, Owner, Property, ReservationSeen } from "@/lib/models";
 import { calculateReservation } from "@/lib/reporting/formulas";
@@ -132,13 +133,7 @@ export async function loadOwnerPortal(ownerId: string, year: number, month?: num
     Property.find().lean(),
     Expense.find({ ownerId }).lean(),
     owner.guestyReportUrl || owner.guestyAllPropertiesUrl
-      ? getGuestyReservations(owner, {
-          limit: 1000,
-          skip: 0,
-          startDate: fullYear.startDate,
-          endDate: fullYear.endDate,
-          allProperties: true
-        })
+      ? getGuestyReservations(owner, reservationQueryForPeriod(fullYear.startDate, fullYear.endDate))
       : []
   ]);
 

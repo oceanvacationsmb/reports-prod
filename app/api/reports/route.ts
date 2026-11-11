@@ -6,6 +6,7 @@ import { Expense, Owner, Property } from "@/lib/models";
 import { getGuestyReservations } from "@/lib/guesty";
 import { asPlain, fail, ok } from "@/lib/http";
 import { getSettings } from "@/lib/settings";
+import { reservationQueryForPeriod } from "@/lib/reporting/reservation-query";
 import { buildAllOwnersTaxReport, buildOwnerReport, buildSummaryReport, periodFromRequest } from "@/lib/reporting/reports";
 import type { ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike } from "@/lib/types";
 
@@ -37,13 +38,7 @@ async function loadOwnerRows(owner: OwnerLike, query: { startDate: string; endDa
   const firstYear = Number.isFinite(startYear) ? startYear : new Date().getUTCFullYear();
   const lastYear = Number.isFinite(endYear) ? endYear : firstYear;
 
-  return getGuestyReservations(owner, {
-    limit: 1000,
-    skip: 0,
-    startDate: `${Math.min(firstYear, lastYear)}-01-01`,
-    endDate: `${Math.max(firstYear, lastYear)}-12-31`,
-    allProperties: true
-  });
+  return getGuestyReservations(owner, reservationQueryForPeriod(`${firstYear}-01-01`, `${lastYear}-12-31`));
 }
 
 export async function POST(req: NextRequest) {

@@ -4,6 +4,7 @@ import { assertAdmin, assertUser, hashPassword, isPrimaryAdmin } from "@/lib/aut
 import { connectDb } from "@/lib/db";
 import { Owner, User } from "@/lib/models";
 import { asPlain, fail, ok } from "@/lib/http";
+import { normalizeOwnerRateInput } from "@/lib/reporting/rates";
 
 const charge = z.object({ label: z.string(), amount: z.coerce.number() });
 const taxFlags = z.object({
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
   try {
     assertAdmin(req);
     await connectDb();
-    const body = ownerSchema.parse(await req.json());
+    const body = ownerSchema.parse(normalizeOwnerRateInput(await req.json()));
     const { portalPassword, ...ownerData } = body;
     const owner = await Owner.create(ownerData);
 

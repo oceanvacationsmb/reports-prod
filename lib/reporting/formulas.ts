@@ -1,4 +1,5 @@
 import type { AppSettings, CalculatedReservation, CleaningCap, NormalizedReservation, OwnerLike } from "@/lib/types";
+import { storedPmcFraction } from "@/lib/reporting/rates";
 
 function lower(value: string | undefined) {
   return (value || "").toLowerCase();
@@ -70,7 +71,7 @@ export function taxes(row: NormalizedReservation) {
 
 export function pmcPercent(owner: OwnerLike) {
   if (owner.type === "split") return 1 - (owner.splitOwnerPercent || 0) / 100;
-  return owner.percent || 0;
+  return storedPmcFraction(owner.percent);
 }
 
 export function netAccommodationDraft(
