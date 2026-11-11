@@ -81,6 +81,7 @@ export type PropertyLike = {
 export type NormalizedReservation = {
   id: string;
   property: string;
+  listingAddress?: string;
   guestName: string;
   checkIn: string;
   checkOut: string;

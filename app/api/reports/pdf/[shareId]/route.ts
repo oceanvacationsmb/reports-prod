@@ -48,7 +48,7 @@ async function renderPdf(html: string, title: string) {
     <style>
       body { background: #fff; }
       .pdf-shell { background: #fff; }
-      .row-actions { display: none !important; }
+      .row-actions, .gri-address-hint { display: none !important; }
       .table-wrap { overflow: visible !important; }
       .report-document { min-width: 0 !important; box-shadow: none; }
       @page { size: letter portrait; margin: 0.45in; }
