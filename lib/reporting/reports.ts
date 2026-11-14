@@ -1040,22 +1040,24 @@ export function buildOwnerReport(
   }
 
   if (request.reportKey === "1099") {
-    const netToOwner = total.netAccommodation - total.pmc - total.expenses;
+    const expenseTotal = total.expenses + total.recurringCharges;
+    const netToOwner = total.netAccommodation - total.pmc - expenseTotal;
+    const summary = {
+      netAccommodation: total.netAccommodation,
+      pmc: total.pmc,
+      expenses: expenseTotal,
+      netToOwner
+    };
     return {
       title: `${name} 1099 Report`,
       periodLabel: period.label,
-      summary: {
-        netAccommodation: total.netAccommodation,
-        pmc: total.pmc,
-        expenses: total.expenses,
-        netToOwner
-      },
-      html: reportShell(`${name} 1099 Report`, period.label, monthly1099Table(reportRows, filteredExpenses, request.year || new Date().getUTCFullYear()), {
-        netAccommodation: total.netAccommodation,
-        pmc: total.pmc,
-        expenses: total.expenses,
-        netToOwner
-      })
+      summary,
+      html: reportShell(
+        `${name} 1099 Report`,
+        period.label,
+        monthly1099Table(reportRows, [...filteredExpenses, ...recurring], request.year || new Date().getUTCFullYear()),
+        summary
+      )
     };
   }
 
