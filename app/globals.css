@@ -1060,6 +1060,16 @@ textarea:focus {
   gap: 5px;
 }
 
+.gri-title-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--jade);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .gri-property-card span {
   color: var(--jade);
   font-size: 0.72rem;

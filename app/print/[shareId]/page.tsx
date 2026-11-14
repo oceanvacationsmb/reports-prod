@@ -31,7 +31,9 @@ export default async function PrintReportPage({
       <script
         dangerouslySetInnerHTML={{
           __html: `
-            document.getElementById('print-report-button')?.addEventListener('click', () => window.print());
+            document.getElementById('print-report-button')?.addEventListener('click', () => {
+              window.location.href = '/api/reports/pdf/${shareId}';
+            });
             ${print === "1" ? "window.addEventListener('load', () => setTimeout(() => window.print(), 250));" : ""}
           `
         }}

@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { AppSettings, CalculatedReservation, ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike, ReportKey } from "@/lib/types";
 import { calculateReservation, pmcPercent } from "@/lib/reporting/formulas";
+import { sameProperty } from "@/lib/reporting/report-options";
 
 export type ReportRequest = {
   reportKey: ReportKey;
@@ -269,7 +270,7 @@ export function recurringExpenses(owner: OwnerLike, startDate: string, endDate: 
 function filterRows(rows: NormalizedReservation[], request: ReportRequest, startDate: string, endDate: string) {
   return rows
     .filter((row) => {
-      const propertyOk = !request.property || row.property === request.property;
+      const propertyOk = !request.property || (request.reportKey === "gri" ? sameProperty(row.property, request.property) : row.property === request.property);
       return propertyOk && inPeriod(row, startDate, endDate);
     })
     .sort((a, b) => {
@@ -348,9 +349,14 @@ function taxReportingTotal(owner: OwnerLike, rows: CalculatedReservation[]) {
   return rows.reduce((sum, row) => (isTaxReportableReservation(row) ? sum + row.taxes : sum), 0);
 }
 
+function payoutAmountToReport(row: CalculatedReservation) {
+  if (row.taxes <= 0) return 0;
+  return Math.max(0, row.grossPayout - row.taxes);
+}
+
 function amountToReportTotal(owner: OwnerLike, rows: CalculatedReservation[]) {
   if (owner.type !== "payout") return 0;
-  return rows.reduce((sum, row) => (isTaxReportableReservation(row) ? sum + row.netAccommodation : sum), 0);
+  return rows.reduce((sum, row) => sum + payoutAmountToReport(row), 0);
 }
 
 function taxFlagLabel(flag: string) {
@@ -392,12 +398,11 @@ export function griPropertyAddress(
   properties: PropertyLike[],
   rows: Array<{ property?: string; listingAddress?: string }>
 ) {
-  const official = propertyOfficialAddress(propertyName, properties);
+  const official = properties.find((item) => sameProperty(item.name, propertyName))?.reportAddress?.trim() || "";
   if (official) return official;
   const counts = new Map<string, number>();
-  const target = propertyName.trim().toLowerCase();
   for (const row of rows) {
-    if ((row.property || "").trim().toLowerCase() !== target) continue;
+    if (!sameProperty(row.property, propertyName)) continue;
     const address = row.listingAddress?.trim();
     if (!address) continue;
     counts.set(address, (counts.get(address) || 0) + 1);
@@ -686,7 +691,8 @@ function griReportDocument(property: string, propertyAddress: string, rows: Calc
     <article class="report-document gri-document">
       <header class="report-hero">
         <p>Ocean Vacations</p>
-        <h1>Gross Rental Income Report</h1>
+        <span class="gri-title-label">Gross Rental Income Report</span>
+        <h1>${escapeHtml(displayAddress)}</h1>
         <span>${escapeHtml(periodLabel)}</span>
         <div class="report-hero-details">
           <span>oceanvacationsmb@gmail.com</span>
