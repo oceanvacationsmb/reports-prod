@@ -4,13 +4,14 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import {
   backfillLock,
-  buildFinal1099,
   linesForMonth,
   lockOnEmail,
   modifyLock,
   planBackfill,
   type FinalStatement,
-  type StatementLine
+  type StatementExpenseLine,
+  type StatementLine,
+  type StatementTotals
 } from "@/lib/locked-statements";
 import { buildOwnerReport } from "@/lib/reporting/reports";
 import type { AppSettings, ExpenseLike, OwnerLike } from "@/lib/types";
@@ -24,8 +25,12 @@ const augustFixture = JSON.parse(
   property: string;
   year: number;
   month: number;
+  nights: number;
+  propertyPayoutBeforeRecurring: number;
   sourceNote: string;
   recurring: StatementLine[];
+  expenses: StatementExpenseLine[];
+  totals: StatementTotals;
 };
 
 const currentBase: StatementLine[] = [
@@ -43,7 +48,7 @@ const jeff: OwnerLike = {
   recurringCharges: currentBase
 };
 
-function augustFinal(ownerPayout?: number): FinalStatement {
+function augustFinal(): FinalStatement {
   return backfillLock({
     ownerId: "jeff",
     ownerName: augustFixture.ownerName,
@@ -52,7 +57,10 @@ function augustFinal(ownerPayout?: number): FinalStatement {
     month: augustFixture.month,
     shareId: "august-share",
     recurring: augustFixture.recurring,
-    totals: typeof ownerPayout === "number" ? { ownerPayout, netAccommodation: 10190, pmc: 1222.8, expenses: 0, recurringCharges: 285 } : undefined,
+    expenses: augustFixture.expenses,
+    totals: augustFixture.totals,
+    nights: augustFixture.nights,
+    propertyPayoutBeforeRecurring: augustFixture.propertyPayoutBeforeRecurring,
     lockedAt: "2026-09-02T15:00:00.000Z",
     sourceNote: augustFixture.sourceNote
   });
@@ -62,7 +70,15 @@ describe("emailed statement locks", () => {
   it("saves the emailed August lines and ignores a later base-fee change", () => {
     const emailed = augustFinal();
     assert.equal(emailed.totals.recurringCharges, 285);
-    assert.equal(emailed.depositRecorded, false);
+    assert.equal(emailed.totals.expenses, 523.98);
+    assert.equal(emailed.totals.netAccommodation, 14948);
+    assert.equal(emailed.totals.pmc, 1793.76);
+    assert.equal(emailed.totals.ownerPayout, 12345.26);
+    assert.equal(emailed.depositRecorded, true);
+    assert.equal(emailed.htmlSnapshot.includes("Nights: 21"), true);
+    assert.match(emailed.htmlSnapshot, /\$12,630\.26/);
+    assert.match(emailed.htmlSnapshot, /\$12,345\.26/);
+    assert.match(emailed.htmlSnapshot, /\$523\.98/);
     assert.deepEqual(
       linesForMonth(currentBase, emailed).map((line) => line.amount),
       [150, 45, 90]
@@ -102,7 +118,7 @@ describe("emailed statement locks", () => {
   });
 
   it("audits Modify, keeps the same link, and stores the earlier lines", () => {
-    const existing = augustFinal(8682.2);
+    const existing = augustFinal();
     const edited = modifyLock(
       existing,
       {
@@ -149,7 +165,7 @@ describe("emailed statement locks", () => {
 });
 
 describe("1099 from emailed finals", () => {
-  it("uses the August statement fees and flags months with no final", () => {
+  it("uses the August deposit and flags months with no final", () => {
     const august = augustFinal();
     const liveExpense: ExpenseLike = {
       ownerId: "jeff",
@@ -180,34 +196,42 @@ describe("1099 from emailed finals", () => {
       ]
     });
     assert.match(report.html, /No final statement: January, February, March, April, May, June, July, September, October, November, December/);
-    assert.match(report.html, /\$285\.00/);
-    assert.match(report.html, /Deposit not recorded/);
+    assert.match(report.html, /\$12,345\.26/);
     assert.equal(report.html.includes("$340.00"), false);
-    assert.equal(report.summary.netToOwner, 0);
+    assert.equal(report.html.includes("Deposit not recorded"), false);
+    assert.equal(report.summary.netToOwner, 12345.26);
+    assert.equal(report.summary.netAccommodation, 14948);
+    assert.equal(report.summary.pmc, 1793.76);
+    assert.equal(report.summary.expenses, 808.98);
     assert.equal(report.summary.missingMonths, 11);
   });
 
-  it("adds only emailed deposits, including August when the payout was saved", () => {
-    const august = augustFinal(8682.2);
+  it("leaves a saved fee list out of the 1099 total when the deposit was not recorded", () => {
+    const feesOnly = backfillLock({
+      ownerId: "jeff",
+      ownerName: "827B - Jeff",
+      year: 2026,
+      month: 4,
+      shareId: "fees-only",
+      recurring: [{ label: "Pool Cleaning", amount: 125 }],
+      lockedAt: "2026-05-02T15:00:00.000Z"
+    });
     const report = buildOwnerReport(jeff, [], [], settings, {
       reportKey: "1099",
       year: 2026,
       lockedMonths: [
         {
-          year: august.year,
-          month: august.month,
-          shareId: august.shareId,
-          depositRecorded: true,
-          totals: august.totals
+          year: feesOnly.year,
+          month: feesOnly.month,
+          shareId: feesOnly.shareId,
+          depositRecorded: feesOnly.depositRecorded,
+          totals: feesOnly.totals
         }
       ]
     });
-    assert.equal(report.summary.netToOwner, 8682.2);
-    assert.equal(report.summary.expenses, 285);
-    assert.match(report.html, /\$8,682\.20/);
-    assert.match(report.html, /\$285\.00/);
-    assert.equal(report.html.includes("$340.00"), false);
-    assert.match(report.html, /No final statement/);
+    assert.equal(feesOnly.depositRecorded, false);
+    assert.match(report.html, /Deposit not recorded/);
+    assert.equal(report.summary.netToOwner, 0);
   });
 
   it("still builds a draft statement from the current base fees", () => {

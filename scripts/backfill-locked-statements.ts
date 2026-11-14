@@ -1,14 +1,17 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { planBackfill, type BackfillInput, type StatementLine } from "@/lib/locked-statements";
+import { planBackfill, type BackfillInput, type StatementExpenseLine, type StatementLine } from "@/lib/locked-statements";
 
 type Fixture = {
   ownerName: string;
   property?: string;
   year: number;
   month: number;
+  nights?: number;
+  propertyPayoutBeforeRecurring?: number;
   sourceNote?: string;
   recurring: StatementLine[];
+  expenses?: StatementExpenseLine[];
   totals?: BackfillInput["totals"];
 };
 
@@ -24,7 +27,10 @@ const input: BackfillInput = {
   month: fixture.month,
   shareId: "dry-run",
   recurring: fixture.recurring,
+  expenses: fixture.expenses,
   totals: fixture.totals,
+  nights: fixture.nights,
+  propertyPayoutBeforeRecurring: fixture.propertyPayoutBeforeRecurring,
   lockedAt: new Date().toISOString(),
   sourceNote: fixture.sourceNote
 };

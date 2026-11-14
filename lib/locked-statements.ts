@@ -247,6 +247,8 @@ export type BackfillInput = {
   recurring: StatementLine[];
   expenses?: StatementExpenseLine[];
   totals?: Partial<StatementTotals>;
+  nights?: number;
+  propertyPayoutBeforeRecurring?: number;
   lockedAt: string;
   lockedBy?: string;
   sourceNote?: string;
@@ -298,6 +300,10 @@ function backfillHtml(input: BackfillInput & { recurring: StatementLine[]; expen
   const deposit = input.depositRecorded
     ? money.format(input.totals.ownerPayout)
     : "Deposit not recorded";
+  const propertyPayout = typeof input.propertyPayoutBeforeRecurring === "number"
+    ? `<p>Property payout before recurring: ${escapeHtml(money.format(input.propertyPayoutBeforeRecurring))}</p>`
+    : "";
+  const nights = typeof input.nights === "number" ? `<p>Nights: ${input.nights}</p>` : "";
   return `
     <article class="report-sheet">
       <h1>${escapeHtml(input.ownerName)} Statement</h1>
@@ -311,6 +317,9 @@ function backfillHtml(input: BackfillInput & { recurring: StatementLine[]; expen
           <tr><td></td><td>Recurring total</td><td>${escapeHtml(money.format(input.recurringCharges))}</td><td></td></tr>
         </tbody>
       </table>
+      <p>Net accommodation ${escapeHtml(money.format(input.totals.netAccommodation))}. PMC ${escapeHtml(money.format(input.totals.pmc))}. Expenses ${escapeHtml(money.format(input.totals.expenses))}.</p>
+      ${propertyPayout}
+      ${nights}
       <p>Net to owner: ${escapeHtml(deposit)}</p>
     </article>
   `;

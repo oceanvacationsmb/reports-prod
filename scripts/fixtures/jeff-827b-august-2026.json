@@ -3,10 +3,23 @@
   "property": "GC - 827B",
   "year": 2026,
   "month": 8,
-  "sourceNote": "August 2026 statement PDF. Pool Cleaning $150, Pest Control $45, and Landscaping $90, each labeled Base recurring charge. The owner payout from that PDF is not in this file.",
+  "nights": 21,
+  "propertyPayoutBeforeRecurring": 12630.26,
+  "sourceNote": "August 2026 statement PDF for GC - 827B. Owner payout $12,345.26 is after the $285 recurring charges. The property line before recurring is $12,630.26.",
   "recurring": [
     { "label": "Pool Cleaning", "amount": 150, "property": "GC - 827B" },
     { "label": "Pest Control", "amount": 45, "property": "GC - 827B" },
     { "label": "Landscaping", "amount": 90, "property": "GC - 827B" }
-  ]
+  ],
+  "expenses": [
+    { "property": "GC - 827B", "type": "Cleaning, Owner Stay", "amount": 350, "notes": "Owner stay" },
+    { "property": "GC - 827B", "type": "FRANK'S ELECTRIC", "amount": 173.98, "vendor": "FRANK'S ELECTRIC" }
+  ],
+  "totals": {
+    "netAccommodation": 14948,
+    "pmc": 1793.76,
+    "expenses": 523.98,
+    "recurringCharges": 285,
+    "ownerPayout": 12345.26
+  }
 }
