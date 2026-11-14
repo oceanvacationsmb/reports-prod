@@ -3050,3 +3050,18 @@ tr:last-child td {
     padding: 6px;
   }
 }
+
+.tax-tools {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.tax-tools .source {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tax-tools .check-needed {
+  font-size: 18px;
+}
