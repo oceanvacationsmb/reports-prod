@@ -35,7 +35,7 @@ async function findLocalChrome() {
   return "";
 }
 
-async function renderPdf(html: string, title: string) {
+export async function renderPdf(html: string, title: string) {
   const localChrome = await findLocalChrome();
   const css = await readFile(path.join(process.cwd(), "app/globals.css"), "utf8");
 

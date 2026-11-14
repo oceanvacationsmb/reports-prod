@@ -16,3 +16,5 @@ Single React/Next.js system that replaces the legacy Reports and Owner Portal ap
 - The browser never calls Guesty directly. `/api/guesty/reservations` and `/api/reports` fetch Guesty server-side and cache normalized rows in MongoDB.
 - Cache TTL defaults to 30 minutes and can be adjusted in Admin Settings.
 - Saved reports store HTML snapshots and can be viewed through shareable `/share/:shareId` links.
+- Tax Report setup, monthly Surfside Beach and Georgetown County packets, and the filing review screen are on the Tax Summary report. See `docs/tax-filing-agent.md`.
+- Owner statement approval, the 1st–3rd email window, and the workbook update are on the Reports tab. See `docs/owner-statement-email.md`.

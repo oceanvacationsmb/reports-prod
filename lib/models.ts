@@ -215,6 +215,100 @@ const settingSchema = new Schema(
   { timestamps: true, versionKey: false }
 );
 
+const storedFileSchema = new Schema(
+  {
+    kind: { type: String, default: "" },
+    filename: { type: String, required: true },
+    contentType: { type: String, required: true },
+    data: { type: Buffer, required: true }
+  },
+  { _id: false }
+);
+
+const taxPacketSchema = new Schema(
+  {
+    jurisdiction: { type: String, enum: ["surfside", "georgetown"], required: true },
+    year: { type: Number, required: true },
+    month: { type: Number, required: true },
+    company: { type: Schema.Types.Mixed, required: true },
+    properties: { type: [Schema.Types.Mixed], default: [] },
+    computation: { type: Schema.Types.Mixed, required: true },
+    previewHtml: { type: String, default: "" },
+    adjustments: { type: Schema.Types.Mixed, default: {} },
+    stateReturns: { type: [storedFileSchema], default: [] }
+  },
+  { timestamps: true, versionKey: false }
+);
+
+taxPacketSchema.index({ jurisdiction: 1, year: 1, month: 1 }, { unique: true });
+
+const taxFilingSchema = new Schema(
+  {
+    portalId: { type: String, required: true },
+    year: { type: Number, required: true },
+    month: { type: Number, required: true },
+    status: {
+      type: String,
+      enum: ["prepared", "submitting", "approved_not_submitted", "filed", "failed"],
+      default: "prepared"
+    },
+    lines: { type: [Schema.Types.Mixed], default: [] },
+    totalGross: { type: Number, default: 0 },
+    totalTaxesCollected: { type: Number, default: 0 },
+    paymentRequired: { type: Boolean, default: false },
+    paymentNote: { type: String, default: "" },
+    entryNote: { type: String, default: "" },
+    approvedAt: { type: Date, default: null },
+    approvedBy: { type: String, default: "" },
+    executorId: { type: String, default: "" },
+    executorMessage: { type: String, default: "" },
+    confirmationId: { type: String, default: "" },
+    receipt: { type: Schema.Types.Mixed, default: null }
+  },
+  { timestamps: true, versionKey: false }
+);
+
+taxFilingSchema.index({ portalId: 1, year: 1, month: 1 }, { unique: true });
+
+const ownerStatementVersionSchema = new Schema(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: "Owner", required: true, index: true },
+    ownerName: { type: String, default: "" },
+    recipient: { type: String, default: "" },
+    year: { type: Number, required: true },
+    month: { type: Number, required: true },
+    version: { type: Number, required: true },
+    status: { type: String, enum: ["pending", "approved_locked", "sending", "sent"], default: "pending" },
+    contentHash: { type: String, required: true },
+    htmlSnapshot: { type: String, required: true },
+    title: { type: String, default: "" },
+    periodLabel: { type: String, default: "" },
+    shareId: { type: String, default: "" },
+    figures: { type: Schema.Types.Mixed, default: {} },
+    approvedAt: { type: Date, default: null },
+    sentAt: { type: Date, default: null },
+    gmailMessageId: { type: String, default: "" },
+    lastError: { type: String, default: "" }
+  },
+  { timestamps: true, versionKey: false }
+);
+
+ownerStatementVersionSchema.index({ ownerId: 1, year: 1, month: 1, version: 1 }, { unique: true });
+
+const statementBatchSchema = new Schema(
+  {
+    year: { type: Number, required: true },
+    month: { type: Number, required: true },
+    deadlineMissedAt: { type: Date, default: null },
+    deadlineMessage: { type: String, default: "" },
+    waitingNames: { type: [String], default: [] },
+    lastSummary: { type: Schema.Types.Mixed, default: null }
+  },
+  { timestamps: true, versionKey: false }
+);
+
+statementBatchSchema.index({ year: 1, month: 1 }, { unique: true });
+
 export const User: any = models.User || mongoose.model("User", userSchema);
 export const Owner: any = models.Owner || mongoose.model("Owner", ownerSchema);
 export const Vendor: any = models.Vendor || mongoose.model("Vendor", vendorSchema);
@@ -227,3 +321,7 @@ export const GuestyCache: any = models.GuestyCache || mongoose.model("GuestyCach
 export const ReservationOverride: any = models.ReservationOverride || mongoose.model("ReservationOverride", reservationOverrideSchema);
 export const ReservationSeen: any = models.ReservationSeen || mongoose.model("ReservationSeen", reservationSeenSchema);
 export const Setting: any = models.Setting || mongoose.model("Setting", settingSchema);
+export const TaxPacket: any = models.TaxPacket || mongoose.model("TaxPacket", taxPacketSchema);
+export const TaxFiling: any = models.TaxFiling || mongoose.model("TaxFiling", taxFilingSchema);
+export const OwnerStatementVersion: any = models.OwnerStatementVersion || mongoose.model("OwnerStatementVersion", ownerStatementVersionSchema);
+export const StatementBatch: any = models.StatementBatch || mongoose.model("StatementBatch", statementBatchSchema);

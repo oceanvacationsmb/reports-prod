@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
+import { StatementBatchTools } from "@/components/StatementBatchTools";
+import { TaxReportTools } from "@/components/TaxReportTools";
 import { reportPropertyChoices, reportYearChoices } from "@/lib/reporting/report-options";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
 import { pmcFractionFromInput, percentPointsFromInput, storedPmcFraction } from "@/lib/reporting/rates";
@@ -1370,6 +1372,15 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 {busy === "report" ? "Generating..." : "Generate"}
               </button>
             </form>
+
+            {isAdmin && reportForm.reportKey === "allOwnersTax" && (
+              <TaxReportTools
+                month={Number(reportForm.month)}
+                year={Number(reportForm.year)}
+                properties={properties.map((property) => ({ name: property.name, taxFlags: property.taxFlags }))}
+              />
+            )}
+            {isAdmin && <StatementBatchTools />}
 
             {currentReport && (
               <section className="report-stage">

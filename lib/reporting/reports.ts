@@ -1390,3 +1390,71 @@ export function buildAllOwnersTaxReport(
 export function makeShareId() {
   return crypto.randomBytes(16).toString("hex");
 }
+
+export type StatementPropertyFigure = {
+  property: string;
+  ownerPayout: number;
+  cleaning: number;
+  amountToReport: number;
+  taxesCollected: number;
+};
+
+/**
+ * Owner payout, cleaning, and per-property tax bases for a statement month.
+ * Uses the same row filters and totals as the statement report. It does not
+ * change Amount to Report, GRI, or 1099.
+ */
+export function statementTransferFigures(
+  owner: OwnerLike,
+  rows: NormalizedReservation[],
+  rawExpenses: ExpenseLike[],
+  settings: AppSettings,
+  request: Pick<ReportRequest, "month" | "year" | "calculationSource">
+) {
+  const reportRequest: ReportRequest = {
+    reportKey: "statement",
+    month: request.month,
+    year: request.year,
+    calculationSource: request.calculationSource || "reports",
+    readOnly: true
+  };
+  const period = periodFromRequest(reportRequest);
+  const calculatedRows = cleanCanceledRows(calculateRows(filterRows(rows, reportRequest, period.startDate, period.endDate), owner, settings, reportRequest));
+  const filteredExpenses = filterExpenses(rawExpenses, reportRequest, period.startDate, period.endDate);
+  const recurring = recurringExpenses(owner, period.startDate, period.endDate);
+  const ownerStayRows = calculatedRows.filter((row) => row.isOwnerStay);
+  const ownerStayTotal = ownerStayRows.reduce((sum, row) => sum + ownerStayCharge(row), 0);
+  const total = totals(calculatedRows, filteredExpenses, recurring, ownerStayTotal);
+  const isOwnerLevel = (expense: ExpenseLike) => ["", "owner", "recurring"].includes(lower(expense.property).trim());
+  const keys = [
+    ...new Set([
+      ...calculatedRows.map((row) => row.property || "Unassigned"),
+      ...filteredExpenses.filter((expense) => !isOwnerLevel(expense)).map((expense) => expense.property)
+    ])
+  ].sort((a, b) => a.localeCompare(b));
+
+  const properties: StatementPropertyFigure[] = keys.map((property) => {
+    const propertyRows = calculatedRows.filter((row) => (row.property || "Unassigned") === property);
+    const propertyExpenses = filteredExpenses.filter((expense) => expense.property === property);
+    const stayRows = propertyRows.filter((row) => row.isOwnerStay);
+    const stayTotal = stayRows.reduce((sum, row) => sum + ownerStayCharge(row), 0);
+    const propertyTotal = totals(propertyRows, propertyExpenses, [], stayTotal);
+    const reportable = propertyRows.filter((row) => isTaxReportableReservation(row));
+    return {
+      property,
+      ownerPayout: owner.type === "draft" ? propertyTotal.draftDue : propertyTotal.ownerPayout,
+      cleaning: propertyTotal.cleaning,
+      amountToReport: owner.type === "payout" ? reportable.reduce((sum, row) => sum + row.netAccommodation, 0) : 0,
+      taxesCollected: owner.type === "payout" ? reportable.reduce((sum, row) => sum + row.taxes, 0) : 0
+    };
+  });
+
+  return {
+    periodLabel: period.label,
+    ownerPayout: owner.type === "draft" ? total.draftDue : total.ownerPayout,
+    cleaning: total.cleaning,
+    amountToReport: amountToReportTotal(owner, calculatedRows),
+    taxesCollected: taxReportingTotal(owner, calculatedRows),
+    properties
+  };
+}
