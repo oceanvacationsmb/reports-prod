@@ -3,6 +3,7 @@ import { getGuestyReservations } from "@/lib/guesty";
 import { reservationQueryForPeriod } from "@/lib/reporting/reservation-query";
 import { asPlain } from "@/lib/http";
 import { Expense, Owner, Property, ReservationSeen } from "@/lib/models";
+import { findFinalStatement } from "@/lib/locked-statement-store";
 import { calculateReservation } from "@/lib/reporting/formulas";
 import { buildOwnerReport } from "@/lib/reporting/reports";
 import { getSettings } from "@/lib/settings";
@@ -155,6 +156,14 @@ export async function loadOwnerPortal(ownerId: string, year: number, month?: num
     },
     propertyList
   );
+
+  if (month) {
+    const finalStatement = await findFinalStatement(ownerId, year, month);
+    if (finalStatement?.htmlSnapshot) {
+      report.html = finalStatement.htmlSnapshot;
+      if (finalStatement.periodLabel) report.periodLabel = finalStatement.periodLabel;
+    }
+  }
 
   const calendarRows = rows
     .map((row) => calculateReservation(row, owner, settings, { calculationSource: "reports" }))

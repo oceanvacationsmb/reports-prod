@@ -5,6 +5,7 @@ import { connectDb } from "@/lib/db";
 import { Expense, Owner, Property } from "@/lib/models";
 import { getGuestyReservations } from "@/lib/guesty";
 import { asPlain, fail, ok } from "@/lib/http";
+import { findFinalStatement, listFinalMonths, reportFromFinal, statementHistory } from "@/lib/locked-statement-store";
 import { getSettings } from "@/lib/settings";
 import { reservationQueryForPeriod } from "@/lib/reporting/reservation-query";
 import { buildAllOwnersTaxReport, buildOwnerReport, buildSummaryReport, periodFromRequest } from "@/lib/reporting/reports";
@@ -88,10 +89,31 @@ export async function POST(req: NextRequest) {
 
     const owner = asPlain(await Owner.findById(ownerId).lean()) as OwnerLike | null;
     if (!owner) throw Object.assign(new Error("Owner not found."), { status: 404 });
+
+    if (body.reportKey === "statement" && body.month && body.year) {
+      const finalStatement = await findFinalStatement(ownerId, body.year, body.month);
+      if (finalStatement) {
+        const history = await statementHistory(ownerId, body.year, body.month);
+        return ok({
+          report: reportFromFinal(finalStatement, owner.name),
+          locked: true,
+          shareId: finalStatement.shareId,
+          recurring: finalStatement.recurring,
+          history
+        });
+      }
+    }
+
     const rows = await loadOwnerRows(owner, { startDate: period.startDate, endDate: period.endDate, property: body.property });
     const expenses = asPlain(await Expense.find({ ownerId }).lean()) as ExpenseLike[];
     const properties = asPlain(await Property.find().lean()) as PropertyLike[];
-    const report = buildOwnerReport(owner, rows, expenses, settings, body, properties);
+    const lockedMonths = body.reportKey === "1099"
+      ? await listFinalMonths(ownerId, body.year || new Date().getUTCFullYear())
+      : undefined;
+    const report = buildOwnerReport(owner, rows, expenses, settings, { ...body, lockedMonths }, properties);
+    if (body.reportKey === "statement" && body.month) {
+      return ok({ report, locked: false, shareId: "", recurring: [], history: [] });
+    }
     return ok({ report });
   } catch (error) {
     return fail(error);

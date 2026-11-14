@@ -126,6 +126,32 @@ type EmailDraft = {
   reportLink: string;
 };
 
+type StatementHistoryItem = {
+  who: string;
+  when: string;
+  beforeRecurring: { label: string; amount: number }[];
+  afterRecurring: { label: string; amount: number }[];
+};
+
+type StatementLockState = {
+  ownerId: string;
+  year: number;
+  month: number;
+  locked: boolean;
+  shareId: string;
+  recurring: { label: string; amount: number }[];
+  history: StatementHistoryItem[];
+};
+
+type LockResponse = {
+  created?: boolean;
+  locked: boolean;
+  shareId: string;
+  recurring: { label: string; amount: number }[];
+  history: StatementHistoryItem[];
+  report: ReportResponse;
+};
+
 type TabKey = "reports" | "income" | "owners" | "expenses" | "saved" | "settings";
 
 const reportOptions: { key: ReportKey; label: string; adminOnly?: boolean }[] = [
@@ -299,6 +325,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [statementEdit, setStatementEdit] = useState<StatementEdit | null>(null);
+  const [statementLock, setStatementLock] = useState<StatementLockState | null>(null);
+  const [modifyOpen, setModifyOpen] = useState(false);
+  const [modifyLines, setModifyLines] = useState<{ label: string; amount: string }[]>([]);
   const reportPreviewRef = useRef<HTMLDivElement | null>(null);
   const propertySettingsRef = useRef<HTMLFormElement | null>(null);
 
@@ -651,6 +680,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     setError("");
     setCurrentReport(null);
     setCurrentSavedReport(null);
+    setStatementLock(null);
+    setModifyOpen(false);
     try {
       const month = reportForm.month === "full-year" ? undefined : Number(reportForm.month);
       const { startDate, endDate, ...form } = reportForm;
@@ -661,11 +692,28 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         month: reportUsesDateRange ? undefined : month,
         year: Number(reportForm.year)
       };
-      const data = await api<{ report: ReportResponse }>("/api/reports", {
+      const data = await api<{
+        report: ReportResponse;
+        locked?: boolean;
+        shareId?: string;
+        recurring?: { label: string; amount: number }[];
+        history?: StatementHistoryItem[];
+      }>("/api/reports", {
         method: "POST",
         body: JSON.stringify(body)
       });
       setCurrentReport(data.report);
+      if (reportForm.reportKey === "statement" && month) {
+        setStatementLock({
+          ownerId: isAdmin ? selectedOwnerId : user.ownerId || "",
+          year: Number(reportForm.year),
+          month,
+          locked: Boolean(data.locked),
+          shareId: data.shareId || "",
+          recurring: data.recurring || [],
+          history: data.history || []
+        });
+      }
       flash("Report generated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to generate report.");
@@ -822,13 +870,38 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     return saveReport();
   }
 
+  function permanentShareId() {
+    if (!statementLock?.locked || !statementLock.shareId) return "";
+    if (reportForm.reportKey !== "statement" || reportForm.month === "full-year") return "";
+    const ownerId = isAdmin ? selectedOwnerId : user.ownerId || "";
+    if (statementLock.ownerId !== ownerId) return "";
+    if (statementLock.year !== Number(reportForm.year) || statementLock.month !== Number(reportForm.month)) return "";
+    return statementLock.shareId;
+  }
+
+  function statementMatches() {
+    if (!statementLock || reportForm.reportKey !== "statement" || reportForm.month === "full-year") return false;
+    const ownerId = isAdmin ? selectedOwnerId : user.ownerId || "";
+    return statementLock.ownerId === ownerId && statementLock.year === Number(reportForm.year) && statementLock.month === Number(reportForm.month);
+  }
+
+  function lineList(lines: { label: string; amount: number }[]) {
+    return lines.map((line) => `${line.label} ${money(line.amount)}`).join(", ");
+  }
+
+  function formatWhen(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  }
+
   async function downloadPdf() {
     try {
       setBusy("pdf");
-      const saved = await ensureSavedReport();
-      if (!saved) return;
+      const shareId = permanentShareId() || (await ensureSavedReport())?.shareId;
+      if (!shareId) return;
       const link = document.createElement("a");
-      link.href = `/api/reports/pdf/${saved.shareId}`;
+      link.href = `/api/reports/pdf/${shareId}`;
       link.download = `${currentReport?.title || "ocean-vacations-report"}.pdf`;
       document.body.appendChild(link);
       link.click();
@@ -843,6 +916,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   async function printPdf() {
     try {
       setBusy("print");
+      const shareId = permanentShareId();
+      if (shareId) {
+        window.open(`${window.location.origin}/print/${shareId}?print=1`, "_blank", "noopener,noreferrer");
+        return;
+      }
       const saved = await ensureSavedReport();
       if (!saved) return;
       window.open(`${printLink(saved)}?print=1`, "_blank", "noopener,noreferrer");
@@ -853,19 +931,97 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     }
   }
 
+  function openModify() {
+    if (!statementLock) return;
+    setModifyLines(
+      statementLock.recurring.length
+        ? statementLock.recurring.map((line) => ({ label: line.label, amount: String(line.amount) }))
+        : [{ label: "", amount: "0" }]
+    );
+    setModifyOpen(true);
+  }
+
+  async function saveModification(event: React.FormEvent) {
+    event.preventDefault();
+    if (!statementLock?.locked) return;
+    const recurring = modifyLines
+      .map((line) => ({ label: line.label.trim(), amount: Number(line.amount) }))
+      .filter((line) => line.label);
+    if (recurring.some((line) => !Number.isFinite(line.amount))) {
+      setError("Each amount needs to be a number.");
+      return;
+    }
+    try {
+      setBusy("modify");
+      const data = await api<LockResponse>("/api/locked-statements/modify", {
+        method: "POST",
+        body: JSON.stringify({
+          ownerId: statementLock.ownerId,
+          year: statementLock.year,
+          month: statementLock.month,
+          recurring
+        })
+      });
+      setCurrentReport(data.report);
+      setStatementLock({
+        ...statementLock,
+        locked: true,
+        shareId: data.shareId,
+        recurring: data.recurring || recurring,
+        history: data.history || []
+      });
+      setModifyOpen(false);
+      flash("Statement updated and locked again. The same link now shows this version.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to modify this statement.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function openEmailClient() {
     try {
       setBusy("email");
-      const saved = await ensureSavedReport();
-      if (!saved) return;
-      const link = printLink(saved);
+      const monthlyStatement = isAdmin && reportForm.reportKey === "statement" && reportForm.month !== "full-year";
+      let shareId = permanentShareId();
+      let periodLabel = currentReport?.periodLabel;
+      if (!shareId && monthlyStatement) {
+        const data = await api<LockResponse>("/api/locked-statements", {
+          method: "POST",
+          body: JSON.stringify({
+            ownerId: selectedOwnerId,
+            year: Number(reportForm.year),
+            month: Number(reportForm.month)
+          })
+        });
+        shareId = data.shareId;
+        periodLabel = data.report.periodLabel;
+        setCurrentReport(data.report);
+        setStatementLock({
+          ownerId: selectedOwnerId,
+          year: Number(reportForm.year),
+          month: Number(reportForm.month),
+          locked: true,
+          shareId: data.shareId,
+          recurring: data.recurring || [],
+          history: data.history || []
+        });
+        setModifyOpen(false);
+        flash(data.created ? "Final statement saved. This link is now locked." : "This month is already final. The email uses the same link.");
+      }
+      const link = shareId
+        ? `${window.location.origin}/share/${shareId}`
+        : printLink(await ensureSavedReport().then((saved) => {
+            if (!saved) throw new Error("Unable to prepare email.");
+            return saved;
+          }));
       const ownerEmail = selectedOwner?.email || "";
       setEmailDraft({
         to: ownerEmail,
         subject: `Your Ocean Vacations ${reportForm.reportKey === "splitCleaning" ? "Cleaning Fee Report" : "Statement"} is Ready`,
         message: reportForm.reportKey === "splitCleaning"
           ? `Hi,\n\nHere is your cleaning-fee report for ${currentReport?.periodLabel || `${reportForm.startDate} - ${reportForm.endDate}`}.\n\nThank you,\nOcean Vacations.`
-          : `Hi,\n\nHere is your statement for ${currentReport?.periodLabel || (reportForm.month === "full-year" ? reportForm.year : `${months[Number(reportForm.month) - 1]} ${reportForm.year}`)}.\nThe transfer will be processed on ${nextTransferDate()}.\n\nThank you,\nOcean Vacations.`,
+          : `Hi,\n\nHere is your statement for ${periodLabel || currentReport?.periodLabel || (reportForm.month === "full-year" ? reportForm.year : `${months[Number(reportForm.month) - 1]} ${reportForm.year}`)}.\nThe transfer will be processed on ${nextTransferDate()}.\n\nThank you,\nOcean Vacations.`,
         reportLink: link
       });
     } catch (err) {
@@ -1378,16 +1534,18 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               <section className="report-stage">
                 <div className="report-toolbar">
                   <div className="report-actions">
-                    {reportForm.reportKey === "statement" && (
+                    {reportForm.reportKey === "statement" && !permanentShareId() && (
                       <button className="secondary-action" type="button" onClick={openMissingReservation}>
                         <Plus size={18} />
                         Add missing reservation
                       </button>
                     )}
-                    <button className="secondary-action" onClick={saveReport} disabled={busy === "save-report"}>
-                      <Save size={18} />
-                      {busy === "save-report" ? "Saving..." : "Save snapshot"}
-                    </button>
+                    {!permanentShareId() && (
+                      <button className="secondary-action" onClick={saveReport} disabled={busy === "save-report"}>
+                        <Save size={18} />
+                        {busy === "save-report" ? "Saving..." : "Save snapshot"}
+                      </button>
+                    )}
                     <button className="secondary-action" onClick={downloadPdf} disabled={busy === "pdf" || busy === "save-report"}>
                       <Download size={18} />
                       {busy === "pdf" ? "Downloading..." : "Download PDF"}
@@ -1398,7 +1556,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </button>
                     <button className="secondary-action" onClick={openEmailClient} disabled={busy === "email" || busy === "save-report"}>
                       <Mail size={18} />
-                      Email client
+                      {isAdmin && reportForm.reportKey === "statement" && reportForm.month !== "full-year" ? "Email owner" : "Email client"}
                     </button>
                     {reportForm.reportKey === "allOwnersTax" && isAdmin && (
                       <button className="secondary-action" type="button" onClick={() => openTaxSettings()}>
@@ -1408,6 +1566,78 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     )}
                   </div>
                 </div>
+                {statementMatches() && statementLock?.locked && (
+                  <div className="message">
+                    <div>
+                      <strong>This month is final.</strong> The emailed link stays the same.{" "}
+                      <a href={`/share/${statementLock.shareId}`} target="_blank" rel="noreferrer">Open the permanent link</a>
+                      {statementLock.history.length > 0 && (
+                        <div className="muted-copy">
+                          {statementLock.history.map((entry) => (
+                            <div key={`${entry.when}-${entry.who}`}>
+                              {formatWhen(entry.when)} by {entry.who}: {lineList(entry.beforeRecurring)} changed to {lineList(entry.afterRecurring)}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {isAdmin && (
+                      <button type="button" onClick={openModify}>
+                        <Pencil size={16} />
+                        Modify
+                      </button>
+                    )}
+                  </div>
+                )}
+                {statementMatches() && statementLock && !statementLock.locked && isAdmin && (
+                  <div className="message">This is a draft. It stays editable until you click Email owner.</div>
+                )}
+                {modifyOpen && statementLock?.locked && (
+                  <form className="editor-panel" onSubmit={saveModification}>
+                    <div className="panel-heading">
+                      <Pencil size={18} />
+                      <h2>Modify this final statement</h2>
+                    </div>
+                    <p className="muted-copy">These lines replace this month only. The same link updates, and the emailed version stays in the history.</p>
+                    {modifyLines.map((line, index) => (
+                      <div className="form-grid" key={index}>
+                        <label>
+                          Description
+                          <input
+                            value={line.label}
+                            onChange={(event) =>
+                              setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item)))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Amount
+                          <input
+                            value={line.amount}
+                            inputMode="decimal"
+                            onChange={(event) =>
+                              setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, amount: event.target.value } : item)))
+                            }
+                          />
+                        </label>
+                        <button
+                          className="secondary-action"
+                          type="button"
+                          onClick={() => setModifyLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button className="secondary-action" type="button" onClick={() => setModifyLines((current) => [...current, { label: "", amount: "0" }])}>
+                      <Plus size={16} />
+                      Add line
+                    </button>
+                    <button className="primary-action" type="submit" disabled={busy === "modify"}>
+                      {busy === "modify" ? "Saving..." : "Save and lock again"}
+                    </button>
+                  </form>
+                )}
                 <div ref={reportPreviewRef} className="report-preview" dangerouslySetInnerHTML={{ __html: currentReport.html }} />
               </section>
             )}
