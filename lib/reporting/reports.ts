@@ -393,12 +393,22 @@ function propertyOfficialAddress(propertyName: string, properties: PropertyLike[
   return property?.reportAddress?.trim() || "";
 }
 
+function savedReportAddress(propertyName: string, properties: PropertyLike[]) {
+  const matches = properties.filter((item) => sameProperty(item.name, propertyName));
+  const exactName = propertyName.trim().toLowerCase();
+  const ordered = [
+    ...matches.filter((item) => item.name.trim().toLowerCase() === exactName),
+    ...matches.filter((item) => item.name.trim().toLowerCase() !== exactName)
+  ];
+  return ordered.map((item) => item.reportAddress?.trim() || "").find(Boolean) || "";
+}
+
 export function griPropertyAddress(
   propertyName: string,
   properties: PropertyLike[],
   rows: Array<{ property?: string; listingAddress?: string }>
 ) {
-  const official = properties.find((item) => sameProperty(item.name, propertyName))?.reportAddress?.trim() || "";
+  const official = savedReportAddress(propertyName, properties);
   if (official) return official;
   const counts = new Map<string, number>();
   for (const row of rows) {
