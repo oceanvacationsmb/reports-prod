@@ -1,5 +1,12 @@
 const ignoredPropertyNames = new Set(["", "owner", "recurring", "unassigned"]);
 
+export function sameProperty(left: string | undefined, right: string | undefined) {
+  const normalize = (value: string | undefined) => (value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const a = normalize(left);
+  const b = normalize(right);
+  return Boolean(a) && a === b;
+}
+
 export function reportPropertyChoices(...groups: Array<Array<string | undefined | null>>) {
   const names: string[] = [];
   const seen = new Set<string>();

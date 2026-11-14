@@ -103,6 +103,22 @@ describe("GRI property address", () => {
     assert.match(report.html, /<strong>NMB - 3104-2<\/strong>/);
   });
 
+  it("opens the selected property when the saved name differs only by punctuation", () => {
+    const address = "1463 Basin Trail, Murrells Inlet, South Carolina 29576, United States of America";
+    const selected = stay("GC - 1463");
+    const other = { ...stay("MB - 1552"), id: "other", totalPayout: 9000, accommodationFare: 9000 };
+    const report = buildOwnerReport(owner, [selected, other], [], settings, {
+      reportKey: "gri",
+      property: "GC-1463",
+      month: 11,
+      year: 2026
+    }, [{ name: "GC - 1463", reportAddress: address }]);
+    assert.ok(report.html.includes(address));
+    assert.ok(report.html.includes("$2,962.64"));
+    assert.equal(report.html.includes("$9,000.00"), false);
+    assert.equal(report.summary.grossPayout, 2962.64);
+  });
+
   it("reads a Guesty address object from the reservation payload", () => {
     const row = normalizeReservation({
       "listing.nickname": { children: "NMB - 3104-2" },

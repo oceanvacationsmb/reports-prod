@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
-import { reportPropertyChoices, reportYearChoices } from "@/lib/reporting/report-options";
+import { reportPropertyChoices, reportYearChoices, sameProperty } from "@/lib/reporting/report-options";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
 import { pmcFractionFromInput, percentPointsFromInput, storedPmcFraction } from "@/lib/reporting/rates";
 import type { ReportKey, SessionUser } from "@/lib/types";
@@ -74,6 +74,7 @@ type SavedReport = {
   reportKey?: string;
   reportTitle: string;
   periodLabel: string;
+  htmlSnapshot?: string;
   shareId: string;
   createdAt: string;
 };
@@ -404,10 +405,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   }, [selectedOwner?._id, selectedOwner?.guestyReportUrl, selectedOwner?.guestyAllPropertiesUrl]);
 
   useEffect(() => {
-    if (reportForm.reportKey !== "gri") return;
-    if (reportForm.property && reportPropertyOptions.includes(reportForm.property)) return;
+    if (reportForm.reportKey !== "gri" || !reportPropertyOptions.length) return;
+    if (reportForm.property && reportPropertyOptions.some((name) => sameProperty(name, reportForm.property))) return;
     const nextProperty = reportPropertyOptions[0] || "";
-    if (nextProperty === reportForm.property) return;
+    if (!nextProperty || nextProperty === reportForm.property) return;
     setReportForm((current) => ({ ...current, property: nextProperty }));
   }, [reportForm.reportKey, reportForm.property, reportPropertyOptions]);
 
@@ -815,7 +816,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   }
 
   async function ensureSavedReport() {
-    if (currentSavedReport) return currentSavedReport;
+    if (currentSavedReport?.htmlSnapshot && currentSavedReport.htmlSnapshot === currentReport?.html && currentSavedReport.reportKey === reportForm.reportKey) {
+      return currentSavedReport;
+    }
     return saveReport();
   }
 
