@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { AppSettings, CalculatedReservation, ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike, ReportKey } from "@/lib/types";
 import { calculateReservation, pmcPercent } from "@/lib/reporting/formulas";
 import { sameProperty } from "@/lib/reporting/report-options";
+import { buildFinal1099, type FinalMonthInput } from "@/lib/locked-statements";
 
 export type ReportRequest = {
   reportKey: ReportKey;
@@ -14,6 +15,8 @@ export type ReportRequest = {
   calculationSource?: "reports" | "portal";
   readOnly?: boolean;
   hideZeroReservations?: boolean;
+  recurringOverride?: { label: string; amount: number }[];
+  lockedMonths?: FinalMonthInput[];
 };
 
 type ReportResult = {
@@ -920,6 +923,69 @@ function byProperty(
     .join("");
 }
 
+function overrideRecurring(owner: OwnerLike, request: ReportRequest, lines: { label: string; amount: number }[]) {
+  const year = request.year || new Date().getUTCFullYear();
+  const month = request.month || 1;
+  return lines.map<ExpenseLike>((charge, index) => ({
+    _id: `override:${index}:${year}-${month}`,
+    ownerId: String(owner._id || owner.id || ""),
+    property: "Recurring",
+    type: charge.label,
+    amount: Number(charge.amount || 0),
+    month,
+    year,
+    vendor: "Recurring",
+    notes: "Base recurring charge"
+  }));
+}
+
+function final1099Body(finals: FinalMonthInput[], year: number) {
+  const built = buildFinal1099(year, finals);
+  const rows = built.months
+    .map((row) => {
+      const label = monthLabels[row.month - 1];
+      if (!row.final) {
+        return `<tr><td>${escapeHtml(label)}</td><td colspan="4">No final statement</td></tr>`;
+      }
+      if (!row.depositRecorded) {
+        return `<tr><td>${escapeHtml(label)}</td><td colspan="3">Fees saved (${formatMoney(row.expenses)})</td><td>Deposit not recorded</td></tr>`;
+      }
+      return `
+      <tr>
+        <td>${escapeHtml(label)}</td>
+        <td>${formatMoney(row.netAccommodation)}</td>
+        <td>${formatMoney(row.pmc)}</td>
+        <td>${formatMoney(row.expenses)}</td>
+        <td>${formatMoney(row.netToOwner)}</td>
+      </tr>`;
+    })
+    .join("");
+  const missing = built.missingMonths.map((month) => monthLabels[month - 1]);
+  const incomplete = built.incompleteMonths.map((month) => monthLabels[month - 1]);
+  const notes = [
+    missing.length ? `No final statement: ${missing.join(", ")}. These months are not included in the 1099 totals.` : "",
+    incomplete.length
+      ? `Deposit not recorded: ${incomplete.join(", ")}. The saved fees stay on file, and that month stays out of the 1099 totals until the owner payout from the statement is saved.`
+      : "",
+    !missing.length && !incomplete.length ? "Every month has an emailed final statement." : ""
+  ]
+    .filter(Boolean)
+    .map((note) => `<p>${escapeHtml(note)}</p>`)
+    .join("");
+  return {
+    built,
+    html: `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Month</th><th>Net Accommodation</th><th>PMC</th><th>Expenses</th><th>Net To Owner</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${notes}
+    `
+  };
+}
+
 function calculateRows(rows: NormalizedReservation[], owner: OwnerLike, settings: AppSettings, request: ReportRequest) {
   return rows.map((row) =>
     calculateReservation(row, owner, settings, {
@@ -956,7 +1022,9 @@ export function buildOwnerReport(
     ? calculatedRows.filter((row) => row.isOwnerStay || [row.grossPayout, row.netAccommodation, row.ownerPayoutBeforeExpenses].some((value) => Math.abs(value) >= 0.005))
     : calculatedRows;
   const filteredExpenses = filterExpenses(rawExpenses, request, period.startDate, period.endDate);
-  const recurring = recurringExpenses(owner, period.startDate, period.endDate);
+  const recurring = Array.isArray(request.recurringOverride)
+    ? overrideRecurring(owner, request, request.recurringOverride)
+    : recurringExpenses(owner, period.startDate, period.endDate);
   const ownerStayRows = reportRows.filter((row) => row.isOwnerStay);
   const ownerStayTotal = ownerStayRows.reduce((sum, row) => sum + ownerStayCharge(row), 0);
   const total = totals(reportRows, filteredExpenses, recurring, ownerStayTotal);
@@ -1036,6 +1104,28 @@ export function buildOwnerReport(
       periodLabel: period.label,
       summary: { grossPayout: total.grossPayout, reservations: total.reservations },
       html: body
+    };
+  }
+
+  if (request.reportKey === "1099" && Array.isArray(request.lockedMonths)) {
+    const year = request.year || new Date().getUTCFullYear();
+    const finalReport = final1099Body(request.lockedMonths, year);
+    return {
+      title: `${name} 1099 Report`,
+      periodLabel: period.label,
+      summary: {
+        netAccommodation: finalReport.built.totals.netAccommodation,
+        pmc: finalReport.built.totals.pmc,
+        expenses: finalReport.built.totals.expenses,
+        netToOwner: finalReport.built.totals.netToOwner,
+        missingMonths: finalReport.built.missingMonths.length
+      },
+      html: reportShell(`${name} 1099 Report`, period.label, finalReport.html, {
+        netAccommodation: finalReport.built.totals.netAccommodation,
+        pmc: finalReport.built.totals.pmc,
+        expenses: finalReport.built.totals.expenses,
+        netToOwner: finalReport.built.totals.netToOwner
+      })
     };
   }
 

@@ -215,6 +215,73 @@ const settingSchema = new Schema(
   { timestamps: true, versionKey: false }
 );
 
+const statementLineSchema = new Schema(
+  {
+    label: { type: String, required: true },
+    amount: { type: Number, required: true },
+    property: { type: String, default: "" }
+  },
+  { _id: false }
+);
+
+const statementExpenseLineSchema = new Schema(
+  {
+    property: { type: String, default: "" },
+    type: { type: String, default: "" },
+    amount: { type: Number, required: true },
+    notes: { type: String, default: "" },
+    vendor: { type: String, default: "" }
+  },
+  { _id: false }
+);
+
+const statementTotalsSchema = new Schema(
+  {
+    netAccommodation: { type: Number, default: 0 },
+    pmc: { type: Number, default: 0 },
+    expenses: { type: Number, default: 0 },
+    recurringCharges: { type: Number, default: 0 },
+    ownerPayout: { type: Number, default: 0 }
+  },
+  { _id: false }
+);
+
+const lockedStatementSchema = new Schema(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: "Owner", required: true, index: true },
+    year: { type: Number, required: true },
+    month: { type: Number, required: true },
+    shareId: { type: String, required: true, unique: true },
+    periodLabel: { type: String, default: "" },
+    htmlSnapshot: { type: String, required: true },
+    recurring: { type: [statementLineSchema], default: [] },
+    expenses: { type: [statementExpenseLineSchema], default: [] },
+    totals: { type: statementTotalsSchema, required: true },
+    depositRecorded: { type: Boolean, default: true },
+    locked: { type: Boolean, default: true },
+    lockedAt: { type: Date, default: Date.now },
+    lockedBy: { type: String, default: "" }
+  },
+  { versionKey: false }
+);
+
+lockedStatementSchema.index({ ownerId: 1, year: 1, month: 1 }, { unique: true });
+
+const statementAuditSchema = new Schema(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: "Owner", required: true, index: true },
+    year: { type: Number, required: true },
+    month: { type: Number, required: true },
+    shareId: { type: String, required: true },
+    action: { type: String, required: true },
+    who: { type: String, required: true },
+    when: { type: Date, required: true },
+    before: { type: Schema.Types.Mixed, required: true },
+    after: { type: Schema.Types.Mixed, required: true }
+  },
+  { versionKey: false }
+);
+
 export const User: any = models.User || mongoose.model("User", userSchema);
 export const Owner: any = models.Owner || mongoose.model("Owner", ownerSchema);
 export const Vendor: any = models.Vendor || mongoose.model("Vendor", vendorSchema);
@@ -227,3 +294,5 @@ export const GuestyCache: any = models.GuestyCache || mongoose.model("GuestyCach
 export const ReservationOverride: any = models.ReservationOverride || mongoose.model("ReservationOverride", reservationOverrideSchema);
 export const ReservationSeen: any = models.ReservationSeen || mongoose.model("ReservationSeen", reservationSeenSchema);
 export const Setting: any = models.Setting || mongoose.model("Setting", settingSchema);
+export const LockedStatement: any = models.LockedStatement || mongoose.model("LockedStatement", lockedStatementSchema);
+export const StatementAudit: any = models.StatementAudit || mongoose.model("StatementAudit", statementAuditSchema);
