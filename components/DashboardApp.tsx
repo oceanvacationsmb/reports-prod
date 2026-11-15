@@ -1673,7 +1673,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     <div className="inline-actions">
                       <button className="secondary-action" type="button" onClick={() => setEmailConfirm(false)}>Cancel</button>
                       <button className="primary-action" type="submit" disabled={busy === "email"}>
-                        {busy === "email" ? "Saving..." : "Email owner"}
+                        {busy === "email" ? "Saving..." : `Email ${ownerShortName(selectedOwner?.name)} and lock`}
                       </button>
                     </div>
                   </form>

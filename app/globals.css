@@ -633,7 +633,7 @@ select:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(140px, 0.7fr) auto;
   gap: 12px;
-  align-items: end;
+  align-items: start;
 }
 
 .modify-line .secondary-action {
@@ -3332,11 +3332,15 @@ tr:last-child td {
 
   .shared-report-screen td {
     display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-    gap: 8px;
-    align-items: start;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    column-gap: 10px;
+    align-items: baseline;
     border: 0;
-    padding: 5px 0;
+    padding: 4px 0;
+  }
+
+  .shared-report-screen td[hidden] {
+    display: none !important;
   }
 
   .shared-report-screen td::before {
@@ -3344,6 +3348,7 @@ tr:last-child td {
     color: var(--muted);
     font-size: 0.72rem;
     font-weight: 800;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
   }
 }

@@ -9,19 +9,29 @@ function escapeAttr(value: string) {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
+function cellText(html: string) {
+  return html.replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
+}
+
 export function addTableDataLabels(html: string) {
   return html.replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, (table) => {
-    const headers = [...table.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)].map((match) =>
-      match[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
-    );
+    const headers = [...table.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)].map((match) => cellText(match[1]));
     if (!headers.length) return table;
-    let index = 0;
-    return table.replace(/<td\b([^>]*)>/gi, (full, attrs: string) => {
-      const colspan = Number(attrs.match(/colspan=["']?(\d+)/i)?.[1] || 1);
-      const label = headers[index] || "";
-      index += Number.isFinite(colspan) && colspan > 0 ? colspan : 1;
-      if (/\sdata-label=/.test(` ${attrs}`)) return full;
-      return `<td${attrs} data-label="${escapeAttr(label)}">`;
+    return table.replace(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi, (row) => {
+      if (/<th\b/i.test(row)) return row;
+      let index = 0;
+      return row.replace(/<td\b([^>]*)>([\s\S]*?)<\/td>/gi, (_full, attrs: string, inner: string) => {
+        const colspan = Number(attrs.match(/colspan=["']?(\d+)/i)?.[1] || 1);
+        const label = headers[index] || "";
+        index += Number.isFinite(colspan) && colspan > 0 ? colspan : 1;
+        const empty = cellText(inner) === "";
+        const labeled = /\sdata-label=/i.test(` ${attrs}`)
+          ? `<td${attrs}>`
+          : `<td${attrs} data-label="${escapeAttr(label)}">`;
+        if (!empty) return `${labeled.slice(0, -1)}>${inner}</td>`;
+        const withHidden = /\shidden(?:=|\s|>)/i.test(` ${attrs}`) ? labeled : labeled.replace("<td", "<td hidden");
+        return `${withHidden.slice(0, -1)}>${inner}</td>`;
+      });
     });
   });
 }
