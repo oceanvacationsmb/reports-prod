@@ -228,6 +228,13 @@ textarea:focus {
   transform: translateY(-1px);
 }
 
+.primary-action:focus-visible,
+.secondary-action:focus-visible,
+.text-action:focus-visible {
+  outline: 2px solid var(--jade);
+  outline-offset: 3px;
+}
+
 .primary-action:disabled,
 .secondary-action:disabled {
   opacity: 0.62;
@@ -241,6 +248,11 @@ textarea:focus {
   padding: 0 14px;
   text-decoration: none;
   box-shadow: var(--shadow-soft);
+}
+
+.secondary-action:hover {
+  border-color: var(--jade);
+  color: var(--jade-dark);
 }
 
 .secondary-action.small {
@@ -441,6 +453,81 @@ textarea:focus {
 .message button {
   border: 0;
   background: transparent;
+}
+
+.message button.secondary-action {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0 14px;
+  box-shadow: var(--shadow-soft);
+}
+
+.message button.secondary-action:hover {
+  border-color: var(--jade);
+  color: var(--jade-dark);
+  transform: translateY(-1px);
+}
+
+.statement-lock {
+  align-items: flex-start;
+}
+
+.statement-lock .message-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.statement-lock a {
+  width: fit-content;
+  color: var(--jade-dark);
+  font-weight: 800;
+}
+
+.statement-lock a:hover,
+.statement-lock a:focus-visible {
+  color: var(--ink);
+}
+
+.statement-history h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-list li {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 250, 0.72);
+}
+
+.history-list p {
+  margin: 6px 0 0;
+}
+
+.statement-modify {
+  display: grid;
+  gap: 12px;
+}
+
+.modify-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(140px, 0.7fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.modify-line .secondary-action {
+  margin-bottom: 1px;
 }
 
 .view-band,
@@ -2000,6 +2087,19 @@ tr:last-child td {
 
   .report-document {
     min-width: 680px;
+  }
+
+  .statement-lock,
+  .modify-line {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .statement-lock .secondary-action,
+  .modify-line .secondary-action,
+  .statement-modify .inline-actions .primary-action,
+  .statement-modify .inline-actions .secondary-action {
+    width: 100%;
   }
 }
 

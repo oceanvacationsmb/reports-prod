@@ -933,6 +933,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
   function openModify() {
     if (!statementLock) return;
+    setError("");
     setModifyLines(
       statementLock.recurring.length
         ? statementLock.recurring.map((line) => ({ label: line.label, amount: String(line.amount) }))
@@ -948,11 +949,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       .map((line) => ({ label: line.label.trim(), amount: Number(line.amount) }))
       .filter((line) => line.label);
     if (recurring.some((line) => !Number.isFinite(line.amount))) {
-      setError("Each amount needs to be a number.");
+      setError("Enter a number for each amount.");
       return;
     }
     try {
       setBusy("modify");
+      setError("");
       const data = await api<LockResponse>("/api/locked-statements/modify", {
         method: "POST",
         body: JSON.stringify({
@@ -1567,40 +1569,49 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   </div>
                 </div>
                 {statementMatches() && statementLock?.locked && (
-                  <div className="message">
-                    <div>
-                      <strong>This month is final.</strong> The emailed link stays the same.{" "}
+                  <div className="message statement-lock">
+                    <div className="message-body">
+                      <strong>This month is final.</strong>
+                      <span>The emailed link stays the same.</span>
                       <a href={`/share/${statementLock.shareId}`} target="_blank" rel="noreferrer">Open the permanent link</a>
-                      {statementLock.history.length > 0 && (
-                        <div className="muted-copy">
-                          {statementLock.history.map((entry) => (
-                            <div key={`${entry.when}-${entry.who}`}>
-                              {formatWhen(entry.when)} by {entry.who}: {lineList(entry.beforeRecurring)} changed to {lineList(entry.afterRecurring)}
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </div>
                     {isAdmin && (
-                      <button type="button" onClick={openModify}>
+                      <button className="secondary-action" type="button" onClick={openModify}>
                         <Pencil size={16} />
                         Modify
                       </button>
                     )}
                   </div>
                 )}
+                {statementMatches() && statementLock?.locked && statementLock.history.length > 0 && (
+                  <section className="editor-panel statement-history" aria-label="Earlier versions">
+                    <div className="panel-heading">
+                      <h2>Earlier versions</h2>
+                    </div>
+                    <ol className="history-list">
+                      {statementLock.history.map((entry) => (
+                        <li key={`${entry.when}-${entry.who}`}>
+                          <strong>{formatWhen(entry.when)}</strong>
+                          <span> by {entry.who}</span>
+                          <p>{lineList(entry.beforeRecurring) || "No recurring charges"} became {lineList(entry.afterRecurring) || "no recurring charges"}.</p>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                )}
                 {statementMatches() && statementLock && !statementLock.locked && isAdmin && (
                   <div className="message">This is a draft. It stays editable until you click Email owner.</div>
                 )}
                 {modifyOpen && statementLock?.locked && (
-                  <form className="editor-panel" onSubmit={saveModification}>
+                  <form className="editor-panel statement-modify" onSubmit={saveModification}>
                     <div className="panel-heading">
                       <Pencil size={18} />
                       <h2>Modify this final statement</h2>
                     </div>
-                    <p className="muted-copy">These lines replace this month only. The same link updates, and the emailed version stays in the history.</p>
+                    <p className="muted-copy">Saving replaces this month only. The same link updates, and the emailed version stays in Earlier versions.</p>
+                    {modifyLines.length === 0 && <p className="muted-copy">No lines yet. Add a charge, or save to clear this month&apos;s fees.</p>}
                     {modifyLines.map((line, index) => (
-                      <div className="form-grid" key={index}>
+                      <div className="modify-line" key={index}>
                         <label>
                           Description
                           <input
@@ -1629,13 +1640,15 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                         </button>
                       </div>
                     ))}
-                    <button className="secondary-action" type="button" onClick={() => setModifyLines((current) => [...current, { label: "", amount: "0" }])}>
-                      <Plus size={16} />
-                      Add line
-                    </button>
-                    <button className="primary-action" type="submit" disabled={busy === "modify"}>
-                      {busy === "modify" ? "Saving..." : "Save and lock again"}
-                    </button>
+                    <div className="inline-actions">
+                      <button className="secondary-action" type="button" onClick={() => setModifyLines((current) => [...current, { label: "", amount: "0" }])}>
+                        <Plus size={16} />
+                        Add line
+                      </button>
+                      <button className="primary-action" type="submit" disabled={busy === "modify"}>
+                        {busy === "modify" ? "Saving..." : "Save and lock again"}
+                      </button>
+                    </div>
                   </form>
                 )}
                 <div ref={reportPreviewRef} className="report-preview" dangerouslySetInnerHTML={{ __html: currentReport.html }} />
