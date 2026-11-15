@@ -42,6 +42,14 @@ export type AdminIncomeOwnerRow = AdminIncomeTotals & {
   owner: string;
   ownerType: OwnerLike["type"];
   properties: number;
+  sharedListings?: string[];
+};
+
+export type ListingOwnerChoice = {
+  ownerId: string;
+  owner: string;
+  pmc: number;
+  ownerPayout: number;
 };
 
 export type AdminIncomePropertyRow = AdminIncomeTotals & {
@@ -50,6 +58,9 @@ export type AdminIncomePropertyRow = AdminIncomeTotals & {
   property: string;
   address: string;
   area: string;
+  ownerDecision?: {
+    owners: ListingOwnerChoice[];
+  };
 };
 
 export type AdminIncomeMonthRow = AdminIncomeTotals & {
@@ -1133,6 +1144,105 @@ function addAdminIncomeTotals(target: AdminIncomeTotals, source: AdminIncomeTota
   return target;
 }
 
+function subtractAdminIncomeTotals(target: AdminIncomeTotals, source: AdminIncomeTotals) {
+  for (const key of Object.keys(target) as Array<keyof AdminIncomeTotals>) {
+    target[key] -= source[key];
+  }
+  return target;
+}
+
+function listingKey(name: string) {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function listingHasActivity(row: AdminIncomePropertyRow) {
+  return row.stays > 0 || [row.grossPayout, row.cleaning, row.netAccommodation, row.pmc, row.expenses].some((value) => Math.abs(value) >= 0.005);
+}
+
+function sameMoney(rows: AdminIncomePropertyRow[], key: keyof AdminIncomeTotals) {
+  const first = rows[0]?.[key] || 0;
+  return rows.every((row) => Math.abs(row[key] - first) < 0.02);
+}
+
+function collapseSharedListings(rows: AdminIncomePropertyRow[]) {
+  const groups = new Map<string, AdminIncomePropertyRow[]>();
+  const order: string[] = [];
+  for (const row of rows) {
+    const key = listingKey(row.property) || row.property;
+    if (!groups.has(key)) order.push(key);
+    groups.set(key, [...(groups.get(key) || []), row]);
+  }
+
+  const collapsed: AdminIncomePropertyRow[] = [];
+  const adjustments: Array<{ remove: AdminIncomePropertyRow[]; add: AdminIncomeTotals }> = [];
+  const sharedByOwner = new Map<string, string[]>();
+
+  for (const key of order) {
+    const group = groups.get(key) || [];
+    const active = group.filter(listingHasActivity);
+    const activeOwners = new Set(active.map((row) => row.ownerId).filter(Boolean));
+    if (activeOwners.size <= 1) {
+      const keeper = active[0] || group[0];
+      if (keeper) collapsed.push(keeper);
+      continue;
+    }
+
+    const sharedValue = (field: keyof AdminIncomeTotals) => (sameMoney(active, field) ? active[0][field] : 0);
+    const pmcDisputed = !sameMoney(active, "pmc");
+    const payoutDisputed = !sameMoney(active, "ownerPayout");
+    const cleaning = sharedValue("cleaning");
+    const websiteVrboFee = sharedValue("websiteVrboFee");
+    const pmc = pmcDisputed ? 0 : sharedValue("pmc");
+    const merged: AdminIncomePropertyRow = {
+      ...active[0],
+      ownerId: "",
+      owner: "Choose an owner",
+      grossPayout: sharedValue("grossPayout"),
+      cleaning,
+      netAccommodation: sharedValue("netAccommodation"),
+      pmc,
+      websiteVrboFee,
+      expenses: sharedValue("expenses"),
+      recurringCharges: sharedValue("recurringCharges"),
+      ownerPayout: payoutDisputed ? 0 : sharedValue("ownerPayout"),
+      bookedNights: sharedValue("bookedNights"),
+      stays: sharedValue("stays"),
+      companyIncome: pmc + cleaning + websiteVrboFee,
+      ownerDecision: {
+        owners: active.map((row) => ({
+          ownerId: row.ownerId,
+          owner: row.owner,
+          pmc: row.pmc,
+          ownerPayout: row.ownerPayout
+        }))
+      }
+    };
+    collapsed.push(merged);
+    adjustments.push({
+      remove: active,
+      add: {
+        companyIncome: merged.companyIncome,
+        grossPayout: merged.grossPayout,
+        cleaning: merged.cleaning,
+        netAccommodation: merged.netAccommodation,
+        pmc: merged.pmc,
+        websiteVrboFee: merged.websiteVrboFee,
+        expenses: merged.expenses,
+        recurringCharges: merged.recurringCharges,
+        ownerPayout: merged.ownerPayout,
+        bookedNights: merged.bookedNights,
+        stays: merged.stays
+      }
+    });
+    for (const row of active) {
+      sharedByOwner.set(row.ownerId, [...(sharedByOwner.get(row.ownerId) || []), row.property]);
+    }
+    void key;
+  }
+
+  return { rows: collapsed, adjustments, sharedByOwner };
+}
+
 function propertyArea(property: string) {
   const normalized = property.trim().toUpperCase();
   if (normalized.startsWith("NMB")) return "North Myrtle Beach";
@@ -1153,14 +1263,14 @@ function adminRecurringForPeriod(owner: OwnerLike, request: Pick<ReportRequest, 
   });
 }
 
-export function buildAdminIncomeData(
+function incomeRowsForPeriod(
   owners: OwnerLike[],
   reservationsByOwner: Map<string, NormalizedReservation[]>,
   expensesByOwner: Map<string, ExpenseLike[]>,
   settings: AppSettings,
   request: Pick<ReportRequest, "month" | "year">,
   properties: PropertyLike[] = []
-): AdminIncomeData {
+) {
   const reportRequest: ReportRequest = { reportKey: "income", month: request.month, year: request.year };
   const period = periodFromRequest(reportRequest);
   const ownerRows: AdminIncomeOwnerRow[] = [];
@@ -1210,13 +1320,13 @@ export function buildAdminIncomeData(
     }
   }
 
-  const representedProperties = new Set(propertyRows.map((row) => row.property.trim().toLowerCase()));
+  const representedProperties = new Set(propertyRows.map((row) => listingKey(row.property)));
   for (const property of properties) {
     const name = property.name?.trim();
-    if (!name || representedProperties.has(name.toLowerCase())) continue;
-    representedProperties.add(name.toLowerCase());
+    if (!name || representedProperties.has(listingKey(name))) continue;
+    representedProperties.add(listingKey(name));
     const owner = owners.find((item) =>
-      (item.properties || []).some((candidate) => candidate.trim().toLowerCase() === name.toLowerCase())
+      (item.properties || []).some((candidate) => listingKey(candidate) === listingKey(name))
     );
     propertyRows.push({
       ownerId: owner ? String(owner._id || owner.id || "") : "",
@@ -1228,38 +1338,41 @@ export function buildAdminIncomeData(
     });
   }
 
+  const collapsed = collapseSharedListings(propertyRows);
+  for (const ownerRow of ownerRows) {
+    const shared = collapsed.sharedByOwner.get(ownerRow.ownerId);
+    if (shared?.length) ownerRow.sharedListings = shared;
+  }
   const summary = ownerRows.reduce((sum, row) => addAdminIncomeTotals(sum, row), emptyAdminIncomeTotals());
-  const monthsToBuild = request.month ? [request.month] : monthLabels.map((_, index) => index + 1);
-  const monthly = monthsToBuild.map((month) => {
-    const monthRequest: ReportRequest = { reportKey: "income", month, year: request.year };
-    const monthPeriod = periodFromRequest(monthRequest);
-    const monthTotal = emptyAdminIncomeTotals();
-
-    for (const owner of owners) {
-      const ownerId = String(owner._id || owner.id || "");
-      const monthRows = cleanCanceledRows(
-        calculateRows(
-          filterRows(reservationsByOwner.get(ownerId) || [], monthRequest, monthPeriod.startDate, monthPeriod.endDate),
-          owner,
-          settings,
-          monthRequest
-        )
-      );
-      const monthExpenses = filterExpenses(expensesByOwner.get(ownerId) || [], monthRequest, monthPeriod.startDate, monthPeriod.endDate);
-      const monthRecurring = recurringExpenses(owner, monthPeriod.startDate, monthPeriod.endDate);
-      addAdminIncomeTotals(monthTotal, adminIncomeTotals(monthRows, monthExpenses, monthRecurring));
-    }
-
-    return { month, label: monthLabels[month - 1], ...monthTotal };
-  });
+  for (const adjustment of collapsed.adjustments) {
+    for (const row of adjustment.remove) subtractAdminIncomeTotals(summary, row);
+    addAdminIncomeTotals(summary, adjustment.add);
+  }
 
   return {
     periodLabel: period.label,
     summary,
-    monthly,
     owners: ownerRows.sort((a, b) => a.owner.localeCompare(b.owner)),
-    properties: propertyRows.sort((a, b) => a.area.localeCompare(b.area) || a.property.localeCompare(b.property))
+    properties: collapsed.rows.sort((a, b) => a.area.localeCompare(b.area) || a.property.localeCompare(b.property))
   };
+}
+
+export function buildAdminIncomeData(
+  owners: OwnerLike[],
+  reservationsByOwner: Map<string, NormalizedReservation[]>,
+  expensesByOwner: Map<string, ExpenseLike[]>,
+  settings: AppSettings,
+  request: Pick<ReportRequest, "month" | "year">,
+  properties: PropertyLike[] = []
+): AdminIncomeData {
+  const main = incomeRowsForPeriod(owners, reservationsByOwner, expensesByOwner, settings, request, properties);
+  const monthsToBuild = request.month ? [request.month] : monthLabels.map((_, index) => index + 1);
+  const monthly = monthsToBuild.map((month) => {
+    const monthSlice = incomeRowsForPeriod(owners, reservationsByOwner, expensesByOwner, settings, { month, year: request.year }, []);
+    return { month, label: monthLabels[month - 1], ...monthSlice.summary };
+  });
+
+  return { ...main, monthly };
 }
 
 export function buildSummaryReport(

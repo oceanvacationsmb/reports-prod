@@ -117,6 +117,35 @@ describe("income inclusion", () => {
     assert.equal(income.summary.netAccommodation, 10190);
   });
 
+  it("shows one row when two owners have the same listing and does not double the portfolio total", () => {
+    const stay = reservation("NMB - 304B", 0, "2026-11-08", 1);
+    stay.manualTotalPayout = 4172.37;
+    stay.manualCleaningFare = 500;
+    stay.manualAccommodation = 3059.64;
+    stay.totalPayout = 4172.37;
+    stay.cleaningFare = 500;
+    const eran: OwnerLike = { _id: "eran", name: "ERAN MARON", type: "payout", percent: 0.12, properties: ["NMB - 304B"] };
+    const investments: OwnerLike = { _id: "investments", name: "MARON INVESTMENTS LLC", type: "payout", percent: 0.1, properties: [] };
+    const income = buildAdminIncomeData(
+      [eran, investments],
+      new Map([["eran", [stay]], ["investments", [{ ...stay, id: "same-stay" }]]]),
+      new Map([["eran", []], ["investments", []]]),
+      settings,
+      { year: 2026 }
+    );
+    const rows = income.properties.filter((row) => row.property.includes("304B"));
+    assert.equal(rows.length, 1);
+    assert.deepEqual(rows[0]?.ownerDecision?.owners.map((owner) => owner.owner), ["ERAN MARON", "MARON INVESTMENTS LLC"]);
+    close(rows[0]?.ownerDecision?.owners[0].pmc || 0, 3059.64 * 0.12);
+    close(rows[0]?.ownerDecision?.owners[1].pmc || 0, 3059.64 * 0.1);
+    close(income.summary.grossPayout, 4172.37);
+    close(income.summary.cleaning, 500);
+    close(income.summary.netAccommodation, 3059.64);
+    close(income.summary.pmc, 0);
+    assert.equal(income.summary.stays, 1);
+    assert.equal(income.summary.grossPayout === 4172.37 * 2, false);
+  });
+
   it("uses the same full-year Guesty query for a November statement and the income page", () => {
     const statementQuery = reservationQueryForPeriod("2026-11-01", "2026-11-30");
     assert.deepEqual(statementQuery, ownerReportReservationQuery(2026));
