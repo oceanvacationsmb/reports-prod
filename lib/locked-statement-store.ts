@@ -149,7 +149,8 @@ async function ensureShare(statement: FinalStatement, ownerName: string) {
     reportTitle: `${ownerName || "Owner"} Statement`,
     periodLabel: statement.periodLabel,
     htmlSnapshot: statement.htmlSnapshot,
-    shareId: statement.shareId
+    shareId: statement.shareId,
+    updatedAt: statement.lockedAt ? new Date(statement.lockedAt) : new Date()
   });
 }
 
@@ -235,6 +236,7 @@ export async function emailFinalStatement(input: { ownerId: string; year: number
     const history = await loadHistory(input.ownerId, input.year, input.month);
     return {
       created: false,
+      lockedAt: decision.record.lockedAt,
       shareId: decision.record.shareId,
       recurring: decision.record.recurring,
       history,
@@ -270,6 +272,7 @@ export async function emailFinalStatement(input: { ownerId: string; year: number
     await ensureShare(winner, owner.name);
     return {
       created: false,
+      lockedAt: winner.lockedAt,
       shareId: winner.shareId,
       recurring: winner.recurring,
       history: await loadHistory(input.ownerId, input.year, input.month),
@@ -279,6 +282,7 @@ export async function emailFinalStatement(input: { ownerId: string; year: number
   await ensureShare(decision.record, owner.name);
   return {
     created: true,
+    lockedAt: decision.record.lockedAt,
     shareId: decision.record.shareId,
     recurring: decision.record.recurring,
     history: [],
@@ -335,7 +339,8 @@ export async function modifyFinalStatement(input: {
       $set: {
         htmlSnapshot: result.lock.htmlSnapshot,
         periodLabel: computed.report.periodLabel,
-        reportTitle: computed.report.title
+        reportTitle: computed.report.title,
+        updatedAt: new Date()
       }
     }
   );
@@ -348,6 +353,7 @@ export async function modifyFinalStatement(input: {
   const history = await loadHistory(input.ownerId, input.year, input.month);
   return {
     created: false,
+    lockedAt: result.lock.lockedAt,
     shareId: result.lock.shareId,
     recurring: result.lock.recurring,
     history,

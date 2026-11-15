@@ -945,7 +945,7 @@ function final1099Body(finals: FinalMonthInput[], year: number) {
     .map((row) => {
       const label = monthLabels[row.month - 1];
       if (!row.final) {
-        return `<tr><td>${escapeHtml(label)}</td><td colspan="4">No final statement</td></tr>`;
+        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4">No final statement <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
       }
       if (!row.depositRecorded) {
         return `<tr><td>${escapeHtml(label)}</td><td colspan="3">Fees saved (${formatMoney(row.expenses)})</td><td>Deposit not recorded</td></tr>`;
@@ -963,14 +963,14 @@ function final1099Body(finals: FinalMonthInput[], year: number) {
   const missing = built.missingMonths.map((month) => monthLabels[month - 1]);
   const incomplete = built.incompleteMonths.map((month) => monthLabels[month - 1]);
   const notes = [
-    missing.length ? `No final statement: ${missing.join(", ")}. These months are not included in the 1099 totals.` : "",
+    missing.length ? `${missing.length} of 12 months have no final statement and aren't in these totals.` : "",
     incomplete.length
       ? `Deposit not recorded: ${incomplete.join(", ")}. The saved fees stay on file, and that month stays out of the 1099 totals until the owner payout from the statement is saved.`
       : "",
     !missing.length && !incomplete.length ? "Every month has an emailed final statement." : ""
   ]
     .filter(Boolean)
-    .map((note) => `<p>${escapeHtml(note)}</p>`)
+    .map((note) => `<p class="ten-ninety-nine-note">${escapeHtml(note)}</p>`)
     .join("");
   return {
     built,

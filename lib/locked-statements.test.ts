@@ -195,7 +195,8 @@ describe("1099 from emailed finals", () => {
         }
       ]
     });
-    assert.match(report.html, /No final statement: January, February, March, April, May, June, July, September, October, November, December/);
+    assert.match(report.html, /11 of 12 months have no final statement and aren't in these totals/);
+    assert.match(report.html, /Open January/);
     assert.match(report.html, /\$12,345\.26/);
     assert.equal(report.html.includes("$340.00"), false);
     assert.equal(report.html.includes("Deposit not recorded"), false);

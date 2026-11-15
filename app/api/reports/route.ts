@@ -98,6 +98,7 @@ export async function POST(req: NextRequest) {
           report: reportFromFinal(finalStatement, owner.name),
           locked: true,
           shareId: finalStatement.shareId,
+          lockedAt: finalStatement.lockedAt,
           recurring: finalStatement.recurring,
           history
         });

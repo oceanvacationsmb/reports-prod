@@ -162,6 +162,7 @@ const savedReportSchema = new Schema(
     periodLabel: { type: String, default: "" },
     htmlSnapshot: { type: String, required: true },
     createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
     shareId: { type: String, required: true, unique: true, index: true }
   },
   { versionKey: false }

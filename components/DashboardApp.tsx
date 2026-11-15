@@ -8,6 +8,7 @@ import {
   Eye,
   FileArchive,
   Home,
+  Lock,
   LogOut,
   MapPinned,
   Plus,
@@ -138,6 +139,7 @@ type StatementLockState = {
   year: number;
   month: number;
   locked: boolean;
+  lockedAt: string;
   shareId: string;
   recurring: { label: string; amount: number }[];
   history: StatementHistoryItem[];
@@ -146,6 +148,7 @@ type StatementLockState = {
 type LockResponse = {
   created?: boolean;
   locked: boolean;
+  lockedAt?: string;
   shareId: string;
   recurring: { label: string; amount: number }[];
   history: StatementHistoryItem[];
@@ -328,6 +331,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [statementLock, setStatementLock] = useState<StatementLockState | null>(null);
   const [modifyOpen, setModifyOpen] = useState(false);
   const [modifyLines, setModifyLines] = useState<{ label: string; amount: string }[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<number, string>>({});
+  const [emailConfirm, setEmailConfirm] = useState(false);
+  const amountRefs = useRef<Array<HTMLInputElement | null>>([]);
   const reportPreviewRef = useRef<HTMLDivElement | null>(null);
   const propertySettingsRef = useRef<HTMLFormElement | null>(null);
 
@@ -675,26 +681,38 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     await runReport();
   }
 
-  async function runReport() {
+  async function runReport(overrides?: { reportKey?: ReportKey; month?: string }) {
+    const reportKey = overrides?.reportKey || reportForm.reportKey;
+    const monthField = overrides?.month || reportForm.month;
+    if (overrides) {
+      setReportForm((current) => ({
+        ...current,
+        reportKey,
+        month: monthField
+      }));
+    }
     setBusy("report");
     setError("");
+    setEmailConfirm(false);
     setCurrentReport(null);
     setCurrentSavedReport(null);
     setStatementLock(null);
     setModifyOpen(false);
     try {
-      const month = reportForm.month === "full-year" ? undefined : Number(reportForm.month);
+      const month = monthField === "full-year" ? undefined : Number(monthField);
       const { startDate, endDate, ...form } = reportForm;
       const body = {
         ...form,
-        ...(reportUsesDateRange ? { startDate, endDate } : {}),
+        reportKey,
+        ...(reportKey === "splitCleaning" ? { startDate, endDate } : {}),
         ownerId: isAdmin ? selectedOwnerId : user.ownerId,
-        month: reportUsesDateRange ? undefined : month,
+        month: reportKey === "splitCleaning" ? undefined : month,
         year: Number(reportForm.year)
       };
       const data = await api<{
         report: ReportResponse;
         locked?: boolean;
+        lockedAt?: string;
         shareId?: string;
         recurring?: { label: string; amount: number }[];
         history?: StatementHistoryItem[];
@@ -703,12 +721,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         body: JSON.stringify(body)
       });
       setCurrentReport(data.report);
-      if (reportForm.reportKey === "statement" && month) {
+      if (reportKey === "statement" && month) {
         setStatementLock({
           ownerId: isAdmin ? selectedOwnerId : user.ownerId || "",
           year: Number(reportForm.year),
           month,
           locked: Boolean(data.locked),
+          lockedAt: data.lockedAt || "",
           shareId: data.shareId || "",
           recurring: data.recurring || [],
           history: data.history || []
@@ -885,8 +904,30 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     return statementLock.ownerId === ownerId && statementLock.year === Number(reportForm.year) && statementLock.month === Number(reportForm.month);
   }
 
-  function lineList(lines: { label: string; amount: number }[]) {
-    return lines.map((line) => `${line.label} ${money(line.amount)}`).join(", ");
+  function ownerShortName(name?: string) {
+    const text = (name || "the owner").trim();
+    const parts = text.split(" - ");
+    return parts.length > 1 ? parts[parts.length - 1].trim() : text;
+  }
+
+  function formatDay(value: string) {
+    const date = new Date(value);
+    if (!value || Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function changedHistoryLines(entry: StatementHistoryItem) {
+    const labels = [...new Set([...entry.beforeRecurring.map((line) => line.label), ...entry.afterRecurring.map((line) => line.label)])];
+    return labels.flatMap((label) => {
+      const before = entry.beforeRecurring.find((line) => line.label === label)?.amount;
+      const after = entry.afterRecurring.find((line) => line.label === label)?.amount;
+      if (before === after) return [];
+      return [{ label, before, after }];
+    });
+  }
+
+  function amountError(value: string) {
+    return value.trim() !== "" && Number.isFinite(Number(value)) ? "" : "Enter an amount, like 150";
   }
 
   function formatWhen(value: string) {
@@ -934,6 +975,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   function openModify() {
     if (!statementLock) return;
     setError("");
+    setFieldErrors({});
+    setEmailConfirm(false);
     setModifyLines(
       statementLock.recurring.length
         ? statementLock.recurring.map((line) => ({ label: line.label, amount: String(line.amount) }))
@@ -945,13 +988,22 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   async function saveModification(event: React.FormEvent) {
     event.preventDefault();
     if (!statementLock?.locked) return;
+    const errors: Record<number, string> = {};
+    modifyLines.forEach((line, index) => {
+      if (!line.label.trim()) return;
+      const message = amountError(line.amount);
+      if (message) errors[index] = message;
+    });
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const first = Number(Object.keys(errors)[0]);
+      amountRefs.current[first]?.focus();
+      return;
+    }
+    setFieldErrors({});
     const recurring = modifyLines
       .map((line) => ({ label: line.label.trim(), amount: Number(line.amount) }))
       .filter((line) => line.label);
-    if (recurring.some((line) => !Number.isFinite(line.amount))) {
-      setError("Enter a number for each amount.");
-      return;
-    }
     try {
       setBusy("modify");
       setError("");
@@ -968,6 +1020,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       setStatementLock({
         ...statementLock,
         locked: true,
+        lockedAt: data.lockedAt || statementLock.lockedAt,
         shareId: data.shareId,
         recurring: data.recurring || recurring,
         history: data.history || []
@@ -981,9 +1034,29 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     }
   }
 
+  function emailButtonLabel() {
+    if (!isAdmin) return "Email client";
+    if (reportForm.reportKey === "1099") return "Email owner";
+    if (reportForm.reportKey === "statement" && reportForm.month !== "full-year") {
+      return permanentShareId() ? "Resend to owner" : "Email owner";
+    }
+    return "Email client";
+  }
+
   async function openEmailClient() {
+    const monthlyDraft = isAdmin && reportForm.reportKey === "statement" && reportForm.month !== "full-year" && !permanentShareId();
+    if (monthlyDraft) {
+      setEmailConfirm(true);
+      setModifyOpen(false);
+      return;
+    }
+    await sendOwnerEmail();
+  }
+
+  async function sendOwnerEmail() {
     try {
       setBusy("email");
+      setEmailConfirm(false);
       const monthlyStatement = isAdmin && reportForm.reportKey === "statement" && reportForm.month !== "full-year";
       let shareId = permanentShareId();
       let periodLabel = currentReport?.periodLabel;
@@ -1004,6 +1077,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           year: Number(reportForm.year),
           month: Number(reportForm.month),
           locked: true,
+          lockedAt: data.lockedAt || new Date().toISOString(),
           shareId: data.shareId,
           recurring: data.recurring || [],
           history: data.history || []
@@ -1102,8 +1176,16 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
   useEffect(() => {
     const node = reportPreviewRef.current;
-    if (!node || reportForm.reportKey !== "statement") return;
+    if (!node) return;
     const listener = (event: MouseEvent) => {
+      const openMonth = (event.target as HTMLElement).closest<HTMLAnchorElement>("[data-open-statement-month]");
+      if (openMonth) {
+        event.preventDefault();
+        const month = openMonth.dataset.openStatementMonth || "";
+        void runReport({ reportKey: "statement", month });
+        return;
+      }
+      if (reportForm.reportKey !== "statement") return;
       void handleStatementTableAction(event);
     };
     node.addEventListener("click", listener, true);
@@ -1493,6 +1575,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   value={reportRequiresFullYear ? "full-year" : reportForm.month}
                   onChange={(event) => setReportForm({ ...reportForm, month: event.target.value })}
                   disabled={reportRequiresFullYear}
+                  title={reportRequiresFullYear ? "The 1099 covers the full year." : undefined}
                 >
                   {reportSupportsFullYear && <option value="full-year">Full year</option>}
                   {!reportRequiresFullYear && months.map((month, index) => (
@@ -1558,7 +1641,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </button>
                     <button className="secondary-action" onClick={openEmailClient} disabled={busy === "email" || busy === "save-report"}>
                       <Mail size={18} />
-                      {isAdmin && reportForm.reportKey === "statement" && reportForm.month !== "full-year" ? "Email owner" : "Email client"}
+                      {emailButtonLabel()}
                     </button>
                     {reportForm.reportKey === "allOwnersTax" && isAdmin && (
                       <button className="secondary-action" type="button" onClick={() => openTaxSettings()}>
@@ -1570,11 +1653,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 </div>
                 {statementMatches() && statementLock?.locked && (
                   <div className="message statement-lock">
-                    <div className="message-body">
-                      <strong>This month is final.</strong>
-                      <span>The emailed link stays the same.</span>
-                      <a href={`/share/${statementLock.shareId}`} target="_blank" rel="noreferrer">Open the permanent link</a>
+                    <div className="status-pill final">
+                      <Lock size={16} aria-hidden="true" />
+                      <span>Final. Emailed to {ownerShortName(selectedOwner?.name)} on {formatDay(statementLock.lockedAt)}.</span>
                     </div>
+                    <a href={`/share/${statementLock.shareId}`} target="_blank" rel="noreferrer">Open the permanent link</a>
                     {isAdmin && (
                       <button className="secondary-action" type="button" onClick={openModify}>
                         <Pencil size={16} />
@@ -1583,24 +1666,49 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     )}
                   </div>
                 )}
+                {emailConfirm && statementMatches() && statementLock && !statementLock.locked && (
+                  <form className="editor-panel email-confirm" onSubmit={(event) => { event.preventDefault(); void sendOwnerEmail(); }}>
+                    <h2>Email {ownerShortName(selectedOwner?.name)} and lock {months[Number(reportForm.month) - 1]}?</h2>
+                    <p>You can still modify later; each change is recorded.</p>
+                    <div className="inline-actions">
+                      <button className="secondary-action" type="button" onClick={() => setEmailConfirm(false)}>Cancel</button>
+                      <button className="primary-action" type="submit" disabled={busy === "email"}>
+                        {busy === "email" ? "Saving..." : "Email owner"}
+                      </button>
+                    </div>
+                  </form>
+                )}
                 {statementMatches() && statementLock?.locked && statementLock.history.length > 0 && (
                   <section className="editor-panel statement-history" aria-label="Earlier versions">
                     <div className="panel-heading">
                       <h2>Earlier versions</h2>
                     </div>
-                    <ol className="history-list">
-                      {statementLock.history.map((entry) => (
-                        <li key={`${entry.when}-${entry.who}`}>
-                          <strong>{formatWhen(entry.when)}</strong>
-                          <span> by {entry.who}</span>
-                          <p>{lineList(entry.beforeRecurring) || "No recurring charges"} became {lineList(entry.afterRecurring) || "no recurring charges"}.</p>
-                        </li>
-                      ))}
-                    </ol>
+                    {statementLock.history.map((entry) => {
+                      const changes = changedHistoryLines(entry);
+                      return (
+                        <div key={`${entry.when}-${entry.who}`}>
+                          <p><strong>{formatWhen(entry.when)}</strong> by {entry.who}</p>
+                          <div className="table-wrap">
+                            <table className="history-table">
+                              <thead><tr><th>Line</th><th>Before</th><th>After</th></tr></thead>
+                              <tbody>
+                                {(changes.length ? changes : [{ label: "Recurring charges", before: undefined, after: undefined }]).map((row) => (
+                                  <tr key={row.label}>
+                                    <td>{row.label}</td>
+                                    <td>{row.before == null ? "—" : money(row.before)}</td>
+                                    <td>{row.after == null ? "—" : money(row.after)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </section>
                 )}
                 {statementMatches() && statementLock && !statementLock.locked && isAdmin && (
-                  <div className="message">This is a draft. It stays editable until you click Email owner.</div>
+                  <div className="status-pill draft">Draft, not sent</div>
                 )}
                 {modifyOpen && statementLock?.locked && (
                   <form className="editor-panel statement-modify" onSubmit={saveModification}>
@@ -1608,7 +1716,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                       <Pencil size={18} />
                       <h2>Modify this final statement</h2>
                     </div>
-                    <p className="muted-copy">Saving replaces this month only. The same link updates, and the emailed version stays in Earlier versions.</p>
+                    <p className="muted-copy">Saving does not email the owner again. The same link updates, and this version stays in Earlier versions.</p>
                     {modifyLines.length === 0 && <p className="muted-copy">No lines yet. Add a charge, or save to clear this month&apos;s fees.</p>}
                     {modifyLines.map((line, index) => (
                       <div className="modify-line" key={index}>
@@ -1623,13 +1731,26 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                         </label>
                         <label>
                           Amount
-                          <input
-                            value={line.amount}
-                            inputMode="decimal"
-                            onChange={(event) =>
-                              setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, amount: event.target.value } : item)))
-                            }
-                          />
+                          <span className={fieldErrors[index] ? "amount-field invalid" : "amount-field"}>
+                            <span aria-hidden="true">$</span>
+                            <input
+                              ref={(node) => { amountRefs.current[index] = node; }}
+                              value={line.amount}
+                              inputMode="decimal"
+                              aria-invalid={fieldErrors[index] ? "true" : "false"}
+                              aria-describedby={fieldErrors[index] ? `modify-amount-error-${index}` : undefined}
+                              onChange={(event) => {
+                                setFieldErrors((current) => {
+                                  if (!current[index]) return current;
+                                  const next = { ...current };
+                                  delete next[index];
+                                  return next;
+                                });
+                                setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, amount: event.target.value } : item)));
+                              }}
+                            />
+                          </span>
+                          {fieldErrors[index] && <span className="field-error" id={`modify-amount-error-${index}`}>{fieldErrors[index]}</span>}
                         </label>
                         <button
                           className="secondary-action"
@@ -1641,7 +1762,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                       </div>
                     ))}
                     <div className="inline-actions">
-                      <button className="secondary-action" type="button" onClick={() => setModifyLines((current) => [...current, { label: "", amount: "0" }])}>
+                      <button className="secondary-action" type="button" onClick={() => { setModifyOpen(false); setFieldErrors({}); }}>
+                        Cancel
+                      </button>
+                      <button className="secondary-action" type="button" onClick={() => setModifyLines((current) => [...current, { label: "", amount: "" }])}>
                         <Plus size={16} />
                         Add line
                       </button>
