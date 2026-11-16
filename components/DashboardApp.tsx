@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
+import { batchConfirmCopy, batchResultTitle, type BatchRecipient } from "@/lib/owner-batch";
 import { reportPropertyChoices, reportYearChoices, sameProperty } from "@/lib/reporting/report-options";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
 import { pmcFractionFromInput, percentPointsFromInput, storedPmcFraction } from "@/lib/reporting/rates";
@@ -333,6 +334,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [modifyLines, setModifyLines] = useState<{ label: string; amount: string }[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<number, string>>({});
   const [emailConfirm, setEmailConfirm] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchStep, setBatchStep] = useState<"loading" | "preview" | "confirm" | "result" | "error">("preview");
+  const [batchError, setBatchError] = useState("");
+  const [batchRecipients, setBatchRecipientsState] = useState<BatchRecipient[]>([]);
+  const [batchResult, setBatchResult] = useState<Array<{ name: string; email: string; gmailUrl?: string; error?: string; created?: boolean }>>([]);
+  const [batchSkipped, setBatchSkipped] = useState<BatchRecipient[]>([]);
   const amountRefs = useRef<Array<HTMLInputElement | null>>([]);
   const reportPreviewRef = useRef<HTMLDivElement | null>(null);
   const propertySettingsRef = useRef<HTMLFormElement | null>(null);
@@ -1035,12 +1042,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   }
 
   function emailButtonLabel() {
-    if (!isAdmin) return "Email client";
-    if (reportForm.reportKey === "1099") return "Email owner";
     if (reportForm.reportKey === "statement" && reportForm.month !== "full-year") {
       return permanentShareId() ? "Resend to owner" : "Email owner";
     }
-    return "Email client";
+    return "Email owner";
   }
 
   async function openEmailClient() {
@@ -1105,6 +1110,57 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     } finally {
       setBusy("");
     }
+  }
+
+  const batchMonth = reportForm.month !== "full-year" ? Number(reportForm.month) : 0;
+  const batchMonthLabel = batchMonth ? months[batchMonth - 1] : "";
+
+  async function openBatchEmail() {
+    if (!batchMonth) return;
+    setBusy("batch-email");
+    setBatchError("");
+    setBatchResult([]);
+    setBatchSkipped([]);
+    setBatchStep("loading");
+    setBatchOpen(true);
+    try {
+      const data = await api<{ recipients: BatchRecipient[] }>(`/api/owner-batch?month=${batchMonth}&year=${reportForm.year}`);
+      setBatchRecipientsState(data.recipients);
+      setBatchStep(data.recipients.length ? "preview" : "preview");
+    } catch (err) {
+      setBatchError(err instanceof Error ? err.message : "Unable to load owners.");
+      setBatchStep("error");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function confirmBatchEmail() {
+    if (!batchMonth) return;
+    setBusy("batch-email");
+    setError("");
+    try {
+      const data = await api<{
+        locked: Array<{ name: string; email: string; gmailUrl?: string; error?: string; created?: boolean }>;
+        skipped: BatchRecipient[];
+      }>("/api/owner-batch", {
+        method: "POST",
+        body: JSON.stringify({ month: batchMonth, year: Number(reportForm.year), action: "email" })
+      });
+      setBatchResult(data.locked);
+      setBatchSkipped(data.skipped);
+      setBatchStep("result");
+    } catch (err) {
+      setBatchError(err instanceof Error ? err.message : "Unable to lock the statements.");
+      setBatchStep("error");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function printAllOwners() {
+    if (!batchMonth) return;
+    window.open(`/print/batch?month=${batchMonth}&year=${reportForm.year}`, "_blank", "noopener,noreferrer");
   }
 
   function sendEmailDraft() {
@@ -1471,6 +1527,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     )
     .sort((a, b) => a.property.localeCompare(b.property) || a.type.localeCompare(b.type));
   const reportIsAdminOnly = ["summary", "allOwnersTax"].includes(reportForm.reportKey);
+  const includedRecipients = batchRecipients.filter((recipient) => recipient.included);
+  const skippedRecipients = [
+    ...batchRecipients.filter((recipient) => !recipient.included),
+    ...batchSkipped.filter((recipient) => !batchRecipients.some((item) => item.ownerId === recipient.ownerId))
+  ];
 
   return (
     <main className="app-shell">
@@ -1639,10 +1700,21 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                       <Printer size={18} />
                       {busy === "print" ? "Opening..." : "Print PDF"}
                     </button>
+                    <button className="secondary-action" type="button" onClick={printAllOwners} disabled={!batchMonth} title={batchMonth ? "Print every owner's statement and the summary" : "Choose a month first."}>
+                      <Printer size={18} />
+                      Print all
+                    </button>
+                    <button className="secondary-action" type="button" onClick={() => void openBatchEmail()} disabled={!batchMonth || busy === "batch-email"} title={batchMonth ? "Preview recipients, then lock each statement" : "Choose a month first."}>
+                      <Mail size={18} />
+                      {busy === "batch-email" && batchStep === "loading" ? "Loading owners..." : "Email all owners"}
+                    </button>
                     <button className="secondary-action" onClick={openEmailClient} disabled={busy === "email" || busy === "save-report"}>
                       <Mail size={18} />
                       {emailButtonLabel()}
                     </button>
+                    {reportForm.reportKey === "1099" && (
+                      <p className="helper-line batch-month-note">Print all and Email all work on one month. Pick Statement or Owner Summary.</p>
+                    )}
                     {reportForm.reportKey === "allOwnersTax" && isAdmin && (
                       <button className="secondary-action" type="button" onClick={() => openTaxSettings()}>
                         <MapPinned size={18} />
@@ -2500,14 +2572,92 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         </div>
       )}
 
-      {emailDraft && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <form className="email-modal" onSubmit={(event) => { event.preventDefault(); sendEmailDraft(); }}>
-            <button className="modal-close" type="button" onClick={() => setEmailDraft(null)} aria-label="Close email client">
+      {batchOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="batch-email-title">
+          <form
+            className="email-modal batch-email-dialog"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (batchStep === "preview") setBatchStep("confirm");
+              if (batchStep === "confirm") void confirmBatchEmail();
+            }}
+          >
+            <button className="modal-close" type="button" onClick={() => setBatchOpen(false)} aria-label="Close email all">
               <X size={22} />
             </button>
             <div>
-              <span>Email client</span>
+              <span>All owners</span>
+              <h2 id="batch-email-title">
+                {batchStep === "loading" && "Loading owners"}
+                {batchStep === "error" && "Owners could not be loaded"}
+                {batchStep === "preview" && (batchRecipients.length ? batchConfirmCopy(batchMonthLabel, batchRecipients).title : "No owners to email")}
+                {batchStep === "confirm" && batchConfirmCopy(batchMonthLabel, batchRecipients).confirmTitle}
+                {batchStep === "result" && batchResultTitle(batchMonthLabel, batchResult.filter((item) => !item.error).length, skippedRecipients.length)}
+              </h2>
+            </div>
+            {batchStep === "loading" && <p>Loading owners...</p>}
+            {batchStep === "error" && <p className="field-error">{batchError}</p>}
+            {batchStep === "preview" && <p>{batchRecipients.length ? batchConfirmCopy(batchMonthLabel, batchRecipients).detail : "There are no owners to include."}</p>}
+            {batchStep === "confirm" && <p>{batchConfirmCopy(batchMonthLabel, batchRecipients).confirmDetail}</p>}
+            {batchStep === "result" && <p>Nothing has been sent. Open a Gmail draft, then press Send in Gmail.</p>}
+            {batchStep !== "loading" && batchStep !== "error" && (
+              <>
+                <ul className="batch-recipient-list">
+                  {includedRecipients.map((recipient) => {
+                    const result = batchResult.find((item) => item.email === recipient.email && item.name === recipient.name);
+                    return (
+                      <li key={recipient.ownerId}>
+                        <strong>{recipient.name}</strong>
+                        <span className="batch-email-address">{recipient.email}</span>
+                        {result?.error && <span className="field-error">{result.error}</span>}
+                        {result?.gmailUrl && <a href={result.gmailUrl} target="_blank" rel="noreferrer">Open Gmail draft</a>}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {skippedRecipients.length > 0 && (
+                  <div className="batch-skipped-group">
+                    <h3>Skipped, no email address ({skippedRecipients.length})</h3>
+                    <ul className="batch-recipient-list">
+                      {skippedRecipients.map((recipient) => (
+                        <li key={recipient.ownerId}>
+                          <strong>{recipient.name}</strong>
+                          <span className="batch-skip-reason">{recipient.reason || "No email address"}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            )}
+            <div className="inline-actions">
+              <button className="secondary-action" type="button" onClick={() => setBatchOpen(false)}>{batchStep === "result" ? "Close" : "Cancel"}</button>
+              {batchStep === "error" && (
+                <button className="primary-action" type="button" onClick={() => void openBatchEmail()}>Try again</button>
+              )}
+              {batchStep === "preview" && (
+                <button className="primary-action" type="submit" disabled={!batchRecipients.some((recipient) => recipient.included)}>
+                  {`Email ${includedRecipients.length} ${includedRecipients.length === 1 ? "owner" : "owners"}`}
+                </button>
+              )}
+              {batchStep === "confirm" && (
+                <button className="primary-action" type="submit" disabled={busy === "batch-email"}>
+                  {busy === "batch-email" ? "Locking..." : batchConfirmCopy(batchMonthLabel, batchRecipients).confirmButton}
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+      )}
+
+      {emailDraft && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <form className="email-modal" onSubmit={(event) => { event.preventDefault(); sendEmailDraft(); }}>
+            <button className="modal-close" type="button" onClick={() => setEmailDraft(null)} aria-label="Close email">
+              <X size={22} />
+            </button>
+            <div>
+              <span>Email owner</span>
               <h2>Send statement</h2>
             </div>
             <label>
