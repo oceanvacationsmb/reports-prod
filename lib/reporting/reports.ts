@@ -949,43 +949,56 @@ function overrideRecurring(owner: OwnerLike, request: ReportRequest, lines: { la
   }));
 }
 
+function final1099Metric(label: string, value: number) {
+  return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${formatMoney(value)}</strong></div>`;
+}
+
 function final1099Body(finals: FinalMonthInput[], year: number) {
   const built = buildFinal1099(year, finals);
+  const included = built.months.filter((row) => row.final && row.depositRecorded);
+  const lockedCount = built.months.filter((row) => row.final).length;
   const rows = built.months
     .map((row) => {
       const label = monthLabels[row.month - 1];
       if (!row.final) {
-        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4">No final statement <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
+        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4"><span class="missing-final-copy">Not final, needs the sent statement</span> <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
       }
       if (!row.depositRecorded) {
         return `<tr><td>${escapeHtml(label)}</td><td colspan="3">Fees saved (${formatMoney(row.expenses)})</td><td>Deposit not recorded</td></tr>`;
       }
       return `
       <tr>
-        <td>${escapeHtml(label)}</td>
-        <td>${formatMoney(row.netAccommodation)}</td>
-        <td>${formatMoney(row.pmc)}</td>
-        <td>${formatMoney(row.expenses)}</td>
-        <td>${formatMoney(row.netToOwner)}</td>
+        <td data-label="Month">${escapeHtml(label)}</td>
+        <td data-label="Net accommodation">${formatMoney(row.netAccommodation)}</td>
+        <td data-label="PMC">${formatMoney(row.pmc)}</td>
+        <td data-label="Expenses">${formatMoney(row.expenses)}</td>
+        <td data-label="Net to owner">${formatMoney(row.netToOwner)}</td>
       </tr>`;
     })
     .join("");
+  const totalBlock = lockedCount === 0
+    ? `<section class="ten-ninety-nine-total"><p>No final statements yet</p><p>Lock a month by emailing the statement or backfilling the sent statement.</p></section>`
+    : included.length > 0 && included.length < 12
+      ? `<section class="ten-ninety-nine-total"><p>Total from ${included.length} of 12 final months</p><div class="metric-grid">${final1099Metric("Net accommodation", built.totals.netAccommodation)}${final1099Metric("PMC", built.totals.pmc)}${final1099Metric("Expenses", built.totals.expenses)}${final1099Metric("Net to owner", built.totals.netToOwner)}</div></section>`
+      : "";
   const missing = built.missingMonths.map((month) => monthLabels[month - 1]);
   const incomplete = built.incompleteMonths.map((month) => monthLabels[month - 1]);
   const notes = [
-    missing.length ? `${missing.length} of 12 months have no final statement and aren't in these totals.` : "",
+    missing.length && included.length ? `${missing.length} months are not final, needs the sent statement.` : "",
     incomplete.length
       ? `Deposit not recorded: ${incomplete.join(", ")}. The saved fees stay on file, and that month stays out of the 1099 totals until the owner payout from the statement is saved.`
       : "",
-    !missing.length && !incomplete.length ? "Every month has an emailed final statement." : ""
+    included.length === 12 ? "Every month has an emailed final statement." : ""
   ]
     .filter(Boolean)
     .map((note) => `<p class="ten-ninety-nine-note">${escapeHtml(note)}</p>`)
     .join("");
   return {
     built,
+    includedCount: included.length,
     html: `
-      <div class="table-wrap">
+      ${totalBlock}
+      <div class="table-wrap ten-ninety-nine-table">
         <table>
           <thead><tr><th>Month</th><th>Net Accommodation</th><th>PMC</th><th>Expenses</th><th>Net To Owner</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -1120,22 +1133,20 @@ export function buildOwnerReport(
   if (request.reportKey === "1099" && Array.isArray(request.lockedMonths)) {
     const year = request.year || new Date().getUTCFullYear();
     const finalReport = final1099Body(request.lockedMonths, year);
+    const headline = {
+      netAccommodation: finalReport.built.totals.netAccommodation,
+      pmc: finalReport.built.totals.pmc,
+      expenses: finalReport.built.totals.expenses,
+      netToOwner: finalReport.built.totals.netToOwner
+    };
     return {
       title: `${name} 1099 Report`,
       periodLabel: period.label,
       summary: {
-        netAccommodation: finalReport.built.totals.netAccommodation,
-        pmc: finalReport.built.totals.pmc,
-        expenses: finalReport.built.totals.expenses,
-        netToOwner: finalReport.built.totals.netToOwner,
+        ...headline,
         missingMonths: finalReport.built.missingMonths.length
       },
-      html: reportShell(`${name} 1099 Report`, period.label, finalReport.html, {
-        netAccommodation: finalReport.built.totals.netAccommodation,
-        pmc: finalReport.built.totals.pmc,
-        expenses: finalReport.built.totals.expenses,
-        netToOwner: finalReport.built.totals.netToOwner
-      })
+      html: reportShell(`${name} 1099 Report`, period.label, finalReport.html, finalReport.includedCount === 12 ? headline : {})
     };
   }
 

@@ -8,6 +8,8 @@ import {
   lockOnEmail,
   modifyLock,
   planBackfill,
+  planSavedStatementBackfill,
+  planUploadedPdfBackfill,
   type FinalStatement,
   type StatementExpenseLine,
   type StatementLine,
@@ -195,7 +197,9 @@ describe("1099 from emailed finals", () => {
         }
       ]
     });
-    assert.match(report.html, /11 of 12 months have no final statement and aren't in these totals/);
+    assert.match(report.html, /Total from 1 of 12 final months/);
+    assert.match(report.html, /11 months are not final, needs the sent statement/);
+    assert.match(report.html, /Not final, needs the sent statement/);
     assert.match(report.html, /Open January/);
     assert.match(report.html, /\$12,345\.26/);
     assert.equal(report.html.includes("$340.00"), false);
@@ -235,6 +239,108 @@ describe("1099 from emailed finals", () => {
     assert.equal(report.summary.netToOwner, 0);
   });
 
+  it("keeps a locked month and marks every other month as needing the sent statement", () => {
+    const august = augustFinal();
+    const liveJanuary: ExpenseLike = {
+      ownerId: "jeff",
+      property: "GC - 827B",
+      type: "Pool Cleaning",
+      amount: 999,
+      month: 1,
+      year: 2026
+    };
+    const report = buildOwnerReport(jeff, [], [liveJanuary], settings, {
+      reportKey: "1099",
+      year: 2026,
+      lockedMonths: [
+        {
+          year: august.year,
+          month: august.month,
+          shareId: august.shareId,
+          depositRecorded: august.depositRecorded,
+          totals: august.totals
+        }
+      ]
+    });
+    assert.match(report.html, /Not final, needs the sent statement/);
+    assert.match(report.html, /Open January/);
+    assert.match(report.html, /\$12,345\.26/);
+    assert.equal(report.html.includes("$999.00"), false);
+    assert.equal(report.summary.netToOwner, 12345.26);
+    assert.equal(report.summary.missingMonths, 11);
+  });
+
+  it("does not recompute a year that has no locked statement", () => {
+    const report = buildOwnerReport(
+      jeff,
+      [
+        {
+          id: "live-stay",
+          property: "GC - 827B",
+          guestName: "Guest",
+          checkIn: "2026-03-04",
+          checkOut: "2026-03-08",
+          nights: 4,
+          source: "airbnb",
+          platform: "airbnb",
+          confirmationCode: "LIVE",
+          status: "confirmed",
+          totalPayout: 8888.77,
+          accommodationFare: 8888.77,
+          cleaningFare: 0,
+          markup: 0,
+          channelCommission: 0,
+          preCancellationHostPayout: 0,
+          feeCreditCard: 0,
+          lengthOfStayDiscount: 0,
+          airbnbResolutionCenter: 0,
+          manualTotalPayout: 8888.77,
+          manualAccommodation: 8888.77,
+          taxesCombined: 0,
+          taxCity: 0,
+          taxState: 0,
+          taxCounty: 0,
+          taxOccupancy: 0,
+          taxGtc: 0,
+          invoiceItemsTaxCombined: 0,
+          detailedTaxesCombined: 0,
+          rowTaxTotal: 0,
+          invoiceItemsRaw: [],
+          raw: {}
+        }
+      ],
+      [],
+      settings,
+      { reportKey: "1099", year: 2026, lockedMonths: [] }
+    );
+    assert.match(report.html, /No final statements yet/);
+    assert.match(report.html, /Lock a month by emailing the statement or backfilling the sent statement/);
+    assert.match(report.html, /Not final, needs the sent statement/);
+    assert.equal(report.html.includes("Total from"), false);
+    assert.equal(report.html.includes("$8,888.77"), false);
+    assert.equal(report.html.includes("$0.00"), false);
+    assert.equal(report.html.includes("—"), false);
+    assert.equal(report.summary.netToOwner, 0);
+    assert.equal(report.summary.missingMonths, 12);
+  });
+
+  it("shows the year total only when all 12 months are final", () => {
+    const august = augustFinal();
+    const lockedMonths = Array.from({ length: 12 }, (_, index) => ({
+      year: 2026,
+      month: index + 1,
+      shareId: `month-${index + 1}`,
+      depositRecorded: true,
+      totals: index + 1 === august.month ? august.totals : { netAccommodation: 10, pmc: 1, expenses: 1, recurringCharges: 0, ownerPayout: 8 }
+    }));
+    const report = buildOwnerReport(jeff, [], [], settings, { reportKey: "1099", year: 2026, lockedMonths });
+    assert.match(report.html, /Every month has an emailed final statement/);
+    assert.equal(report.html.includes("Total from"), false);
+    assert.equal(report.html.includes("No final statements yet"), false);
+    assert.equal(report.html.includes("Not final"), false);
+    assert.match(report.html, /\$12,345\.26/);
+  });
+
   it("still builds a draft statement from the current base fees", () => {
     const report = buildOwnerReport(jeff, [], [], settings, {
       reportKey: "statement",
@@ -251,5 +357,85 @@ describe("1099 from emailed finals", () => {
     });
     assert.equal(corrected.summary.recurringCharges, 285);
     assert.equal(String(corrected.html).includes("$250.00"), false);
+  });
+});
+
+function sentStatementHtml(payout: string) {
+  const line = (label: string, value: string) =>
+    `<div class="statement-summary-line"><span>${label}</span><strong>${value}</strong></div>`;
+  return [
+    line("Total net accommodation", "$1,000.00"),
+    line("Minus PMC", "$120.00"),
+    line("Minus expenses", "$30.00"),
+    line("Minus recurring charges", "$45.00"),
+    line("Owner payout", payout)
+  ].join("");
+}
+
+describe("backfill from sent statements", () => {
+  const june = {
+    ownerId: "jeff",
+    ownerName: "827B - Jeff",
+    periodLabel: "June 1 - June 30, 2026",
+    htmlSnapshot: sentStatementHtml("$805.00")
+  };
+
+  it("locks the latest saved snapshot when every copy has the same totals", () => {
+    const plans = planSavedStatementBackfill([
+      { ...june, shareId: "early", createdAt: "2026-07-01T12:00:00.000Z" },
+      { ...june, shareId: "late", createdAt: "2026-07-01T18:00:00.000Z" }
+    ]);
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0]?.action, "create");
+    if (plans[0]?.action !== "create") return;
+    assert.equal(plans[0].lock.shareId, "late");
+    assert.equal(plans[0].lock.backfilled, true);
+    assert.equal(plans[0].lock.sourceKind, "saved-report");
+    assert.equal(plans[0].lock.sourceRef, "late");
+    assert.equal(plans[0].lock.htmlSnapshot, june.htmlSnapshot);
+    assert.equal(plans[0].lock.totals.ownerPayout, 805);
+    assert.equal(plans[0].lock.totals.recurringCharges, 45);
+    assert.equal(plans[0].lock.depositRecorded, true);
+  });
+
+  it("asks for a choice when saved snapshots for one month disagree", () => {
+    const plans = planSavedStatementBackfill([
+      { ...june, shareId: "early", createdAt: "2026-06-30T12:00:00.000Z" },
+      { ...june, shareId: "later", createdAt: "2026-07-01T12:00:00.000Z", htmlSnapshot: sentStatementHtml("$700.00") }
+    ]);
+    assert.equal(plans[0]?.action, "choose");
+    if (plans[0]?.action !== "choose") return;
+    assert.deepEqual(
+      plans[0].choices.map((choice) => choice.shareId),
+      ["early", "later"]
+    );
+  });
+
+  it("builds a locked snapshot from an uploaded PDF and refuses a PDF without the sent totals", () => {
+    const ready = planUploadedPdfBackfill({
+      ownerId: "jeff",
+      ownerName: "827B - Jeff",
+      year: 2026,
+      month: 5,
+      filename: "jeff-may-2026.pdf",
+      text: "Total net accommodation $2,000.00\nMinus PMC $240.00\nMinus expenses $10.00\nMinus recurring charges $50.00\nOwner payout $1,700.00",
+      lockedAt: "2026-06-02T00:00:00.000Z"
+    });
+    assert.equal(ready.action, "create");
+    if (ready.action !== "create") return;
+    assert.equal(ready.lock.backfilled, true);
+    assert.equal(ready.lock.sourceKind, "uploaded-pdf");
+    assert.equal(ready.lock.sourceRef, "jeff-may-2026.pdf");
+    assert.equal(ready.lock.totals.ownerPayout, 1700);
+    assert.match(ready.lock.htmlSnapshot, /Backfilled from uploaded-pdf: jeff-may-2026\.pdf/);
+    const missing = planUploadedPdfBackfill({
+      ownerId: "jeff",
+      ownerName: "827B - Jeff",
+      year: 2026,
+      month: 4,
+      filename: "notes.pdf",
+      text: "This file has no statement totals."
+    });
+    assert.equal(missing.action, "unreadable");
   });
 });

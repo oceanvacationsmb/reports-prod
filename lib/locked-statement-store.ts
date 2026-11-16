@@ -89,8 +89,15 @@ export function toFinalStatement(doc: Record<string, unknown>): FinalStatement {
     depositRecorded: doc.depositRecorded !== false,
     locked: true,
     lockedAt: doc.lockedAt ? new Date(String(doc.lockedAt)).toISOString() : new Date().toISOString(),
-    lockedBy: String(doc.lockedBy || "")
+    lockedBy: String(doc.lockedBy || ""),
+    backfilled: doc.backfilled === true,
+    sourceKind: sourceKindValue(doc.sourceKind),
+    sourceRef: String(doc.sourceRef || "")
   };
+}
+
+function sourceKindValue(value: unknown): FinalStatement["sourceKind"] {
+  return value === "saved-report" || value === "uploaded-pdf" || value === "fixture" ? value : "";
 }
 
 export function reportFromFinal(statement: FinalStatement, ownerName: string) {
