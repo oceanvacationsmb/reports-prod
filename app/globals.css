@@ -1099,6 +1099,34 @@ select:disabled {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
 }
 
+.batch-recipient-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(46vh, 420px);
+  overflow: auto;
+}
+
+.batch-recipient-list li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.batch-recipient-list span,
+.batch-recipient-list a {
+  overflow-wrap: anywhere;
+}
+
+.batch-print-page {
+  break-after: page;
+  page-break-after: always;
+}
+
 .email-modal span {
   color: var(--muted);
   font-size: 0.78rem;
