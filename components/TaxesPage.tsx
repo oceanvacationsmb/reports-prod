@@ -117,6 +117,9 @@ export function TaxesPage() {
           <header className="tax-print-heading">
             <span>Report Taxes</span>
             <h2>{report.periodLabel}</h2>
+            {report.reservationsUsed === 0 && (
+              <p className="helper-line">No reservations in {months[Number(month) - 1]} {year} yet, so nothing to report.</p>
+            )}
           </header>
           <div className="metric-grid">
             <div className="metric">

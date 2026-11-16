@@ -673,12 +673,21 @@ function reservationTable(rows: CalculatedReservation[], includeOwnerPayout = tr
   `;
 }
 
+function bookedThrough(row: CalculatedReservation) {
+  const value = `${row.source} ${row.platform}`.toLowerCase();
+  if (value.includes("airbnb")) return "Airbnb";
+  if (value.includes("vrbo") || value.includes("homeaway")) return "VRBO";
+  if (value.includes("website") || value.includes("direct")) return "Website";
+  if (value.includes("booking")) return "Booking.com";
+  return (row.platform || row.source || "Unknown").trim() || "Unknown";
+}
+
 function griReservationTable(rows: CalculatedReservation[]) {
   const body = rows
     .map(
       (row) => `
       <tr>
-        <td>${escapeHtml(row.confirmationCode || row.id)}</td>
+        <td>${escapeHtml(bookedThrough(row))}</td>
         <td>${escapeHtml(`${formatShortDate(row.checkIn)} - ${formatShortDate(row.checkOut)}`)}</td>
         <td>${formatMoney(row.grossPayout)}</td>
       </tr>`
@@ -688,7 +697,7 @@ function griReservationTable(rows: CalculatedReservation[]) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Reservation Code</th><th>Check-In/Out</th><th>Gross Payout</th></tr></thead>
+        <thead><tr><th>Booked through</th><th>Check-In/Out</th><th>Gross Payout</th></tr></thead>
         <tbody>${body || '<tr><td colspan="3">No reservations found.</td></tr>'}</tbody>
       </table>
     </div>
@@ -962,18 +971,18 @@ function final1099Body(finals: FinalMonthInput[], year: number) {
     .map((row) => {
       const label = monthLabels[row.month - 1];
       if (!row.final) {
-        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4">Not final, needs the sent statement <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
+        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4"><span class="missing-final-copy">Not final, needs the sent statement</span> <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
       }
       if (!row.depositRecorded) {
         return `<tr><td>${escapeHtml(label)}</td><td colspan="3">Fees saved (${formatMoney(row.expenses)})</td><td>Deposit not recorded</td></tr>`;
       }
       return `
       <tr>
-        <td>${escapeHtml(label)}</td>
-        <td>${formatMoney(row.netAccommodation)}</td>
-        <td>${formatMoney(row.pmc)}</td>
-        <td>${formatMoney(row.expenses)}</td>
-        <td>${formatMoney(row.netToOwner)}</td>
+        <td data-label="Month">${escapeHtml(label)}</td>
+        <td data-label="Net accommodation">${formatMoney(row.netAccommodation)}</td>
+        <td data-label="PMC">${formatMoney(row.pmc)}</td>
+        <td data-label="Expenses">${formatMoney(row.expenses)}</td>
+        <td data-label="Net to owner">${formatMoney(row.netToOwner)}</td>
       </tr>`;
     })
     .join("");
@@ -999,7 +1008,7 @@ function final1099Body(finals: FinalMonthInput[], year: number) {
     includedCount: included.length,
     html: `
       ${totalBlock}
-      <div class="table-wrap">
+      <div class="table-wrap ten-ninety-nine-table">
         <table>
           <thead><tr><th>Month</th><th>Net Accommodation</th><th>PMC</th><th>Expenses</th><th>Net To Owner</th></tr></thead>
           <tbody>${rows}</tbody>

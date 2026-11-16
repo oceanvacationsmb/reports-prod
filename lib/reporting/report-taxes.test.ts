@@ -65,7 +65,7 @@ describe("property tax report", () => {
             stay({
               id: "kristin-crisp",
               property: "NMB - 3104-2",
-              guestName: "Kristin CRISP",
+              guestName: "Casey Guest",
               source: "VRBO",
               platform: "HomeAway",
               totalPayout: 3343.56,

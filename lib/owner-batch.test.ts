@@ -4,6 +4,7 @@ import {
   batchConfirmCopy,
   batchRecipients,
   gmailComposeUrl,
+  batchResultTitle,
   ownerBatchPrintDocument,
   statementEmailDraft
 } from "@/lib/owner-batch";
@@ -11,7 +12,7 @@ import {
 describe("owner batch", () => {
   const owners = [
     { _id: "all", name: "ALL PROPERTIES", email: "" },
-    { _id: "nicole", name: "1463 - NICOLE", email: "nwood112@gmail.com" },
+    { _id: "nicole", name: "1463 - CASEY", email: "casey.harbor@example.com" },
     { _id: "blank", name: "MARON INVESTMENTS LLC", email: "  " },
     { _id: "jeff", name: "827B - Jeff", email: "jeff@example.com" }
   ];
@@ -21,7 +22,7 @@ describe("owner batch", () => {
     assert.deepEqual(
       recipients.map((recipient) => [recipient.name, recipient.included]),
       [
-        ["1463 - NICOLE", true],
+        ["1463 - CASEY", true],
         ["827B - Jeff", true],
         ["MARON INVESTMENTS LLC", false]
       ]
@@ -35,14 +36,14 @@ describe("owner batch", () => {
 
   it("builds one Gmail draft per locked share link", () => {
     const draft = statementEmailDraft({
-      email: "nwood112@gmail.com",
+      email: "casey.harbor@example.com",
       periodLabel: "October 1 - October 31, 2026",
       shareUrl: "https://reports.example/share/abc",
       transferDate: "November 5, 2026"
     });
     const url = gmailComposeUrl(draft);
-    assert.equal(draft.to, "nwood112@gmail.com");
-    assert.ok(url.includes("nwood112%40gmail.com"));
+    assert.equal(draft.to, "casey.harbor@example.com");
+    assert.ok(url.includes("casey.harbor%40example.com"));
     assert.ok(url.includes("share%2Fabc") || url.includes("share/abc"));
   });
 
@@ -52,7 +53,11 @@ describe("owner batch", () => {
       { title: "Owner summary", html: "<article>Summary</article>" }
     ]);
     assert.equal(html.split("batch-print-page").length - 1, 2);
+    assert.equal(html.includes("batch-print-label"), false);
     assert.ok(html.includes("Nicole statement"));
     assert.ok(html.includes("Summary"));
+    assert.equal(batchResultTitle("October", 2, 1), "2 October statements locked");
+    assert.equal(batchResultTitle("October", 1, 1), "1 October statement locked");
+    assert.equal(batchResultTitle("October", 3, 0), "October is locked");
   });
 });

@@ -74,6 +74,8 @@ describe("GRI property address", () => {
     }, properties);
     assert.equal(griPropertyAddress("NMB - 3104-2", properties, [stay("NMB - 3104-2", guestyAddress)]), properties[0].reportAddress);
     assert.ok(report.html.includes("3104 North Ocean Blvd, North Myrtle Beach, SC 29582"));
+    assert.ok(report.html.includes("Booked through"));
+    assert.ok(report.html.includes("Airbnb"));
     assert.equal(report.html.includes("gri-address-hint"), false);
     assert.equal(report.summary.grossPayout, 2962.64);
   });

@@ -17,7 +17,7 @@ type GeneratedReport = {
   ownerId: string;
 };
 
-const reportChoices = [{ key: "gri", label: "GRI" }];
+const reportChoices = [{ key: "gri", label: "Gross Rental Income (GRI)" }];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -29,7 +29,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export function SimpleReportsPage({ owners }: { owners: OwnerChoice[] }) {
+export function SimpleReportsPage({ owners, onEditOwner }: { owners: OwnerChoice[]; onEditOwner: (ownerId: string) => void }) {
   const years = reportYearChoices();
   const [reportKey, setReportKey] = useState(reportChoices[0].key);
   const [ownerId, setOwnerId] = useState("");
@@ -110,7 +110,7 @@ export function SimpleReportsPage({ owners }: { owners: OwnerChoice[] }) {
 
   return (
     <section className="view-band">
-      <form className="control-grid screen-controls" onSubmit={generate}>
+      <form className="control-grid screen-controls simple-report-form" onSubmit={generate}>
         <label>
           Report
           <select
@@ -127,6 +127,7 @@ export function SimpleReportsPage({ owners }: { owners: OwnerChoice[] }) {
               </option>
             ))}
           </select>
+          <span className="field-hint">Gross rental income is the first report. More can be added later.</span>
         </label>
         <label>
           Owner
@@ -138,6 +139,8 @@ export function SimpleReportsPage({ owners }: { owners: OwnerChoice[] }) {
               </option>
             ))}
           </select>
+          {!ownerId && <span className="field-hint">Choose an owner. The properties assigned to that owner load next.</span>}
+          {ownerId && properties.length > 0 && <span className="field-hint">{owner?.name} is selected.</span>}
         </label>
         <label>
           Property
@@ -157,6 +160,20 @@ export function SimpleReportsPage({ owners }: { owners: OwnerChoice[] }) {
               </option>
             ))}
           </select>
+          {ownerId && properties.length === 0 && (
+            <span className="field-notice">
+              No properties are assigned to {owner?.name}.{" "}
+              <button type="button" className="text-action" onClick={() => onEditOwner(ownerId)}>
+                Assign properties on this owner
+              </button>
+            </span>
+          )}
+          {ownerId && properties.length > 0 && !property && (
+            <span className="field-hint">
+              {properties.length === 1 ? "1 property assigned." : `${properties.length} properties assigned.`} Choose one, then generate.
+            </span>
+          )}
+          {property && !report && busy !== "report" && <span className="field-hint">Ready to generate {property}.</span>}
         </label>
         <label>
           Year
@@ -173,47 +190,39 @@ export function SimpleReportsPage({ owners }: { owners: OwnerChoice[] }) {
               </option>
             ))}
           </select>
+          <span className="field-hint">The report covers this whole year.</span>
         </label>
-        <button className="primary-action" disabled={generateDisabled}>
-          {busy === "report" ? "Generating..." : "Generate"}
-        </button>
+        <div className="simple-report-generate">
+          <button className="primary-action" disabled={generateDisabled}>
+            {busy === "report" ? "Generating..." : "Generate"}
+          </button>
+          {busy === "report" && (
+            <span className="field-hint" role="status">
+              Generating the report...
+            </span>
+          )}
+          {error && (
+            <span className="field-notice field-error" role="alert">
+              {error}
+            </span>
+          )}
+        </div>
       </form>
 
-      {!report && <p className="helper-line screen-controls">Choose an owner. The properties assigned to that owner load next.</p>}
-
-      {ownerId && properties.length === 0 && <p className="empty-state">No properties are assigned to {owner?.name}. Assign properties on the owner before generating.</p>}
-
-      {ownerId && properties.length > 0 && !property && (
-        <p className="helper-line">{properties.length === 1 ? "1 property assigned." : `${properties.length} properties assigned.`} Choose one, then generate.</p>
-      )}
-
-      {busy === "report" && (
-        <p className="helper-line" role="status">
-          Generating the report...
-        </p>
-      )}
-
-      {error && (
-        <div className="message error" role="alert">
-          <span>{error}</span>
-          <button className="secondary-action" type="button" onClick={() => setError("")}>
-            Close
-          </button>
+      {report && (
+        <div className="report-toolbar screen-controls">
+          <div className="report-actions simple-report-actions">
+            <button className="secondary-action" type="button" onClick={() => void download()} disabled={busy === "pdf"}>
+              <Download size={18} />
+              {busy === "pdf" ? "Downloading..." : "Download"}
+            </button>
+            <button className="secondary-action" type="button" onClick={() => window.print()}>
+              <Printer size={18} />
+              Print
+            </button>
+          </div>
         </div>
       )}
-
-      <div className="report-toolbar screen-controls">
-        <div className="report-actions">
-          <button className="secondary-action" type="button" onClick={() => void download()} disabled={!report || busy === "pdf" || busy === "report"}>
-            <Download size={18} />
-            {busy === "pdf" ? "Downloading..." : "Download"}
-          </button>
-          <button className="secondary-action" type="button" onClick={() => window.print()} disabled={!report || busy === "report"}>
-            <Printer size={18} />
-            Print
-          </button>
-        </div>
-      </div>
 
       {report && <div className="report-preview" dangerouslySetInnerHTML={{ __html: report.html }} />}
     </section>
