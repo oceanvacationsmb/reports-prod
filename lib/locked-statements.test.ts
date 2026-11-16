@@ -197,6 +197,7 @@ describe("1099 from emailed finals", () => {
         }
       ]
     });
+    assert.match(report.html, /Total from 1 of 12 final months/);
     assert.match(report.html, /11 months are not final, needs the sent statement/);
     assert.match(report.html, /Not final, needs the sent statement/);
     assert.match(report.html, /Open January/);
@@ -312,12 +313,32 @@ describe("1099 from emailed finals", () => {
       settings,
       { reportKey: "1099", year: 2026, lockedMonths: [] }
     );
-    assert.match(report.html, /12 months are not final, needs the sent statement/);
+    assert.match(report.html, /No final statements yet/);
+    assert.match(report.html, /Lock a month by emailing the statement or backfilling the sent statement/);
     assert.match(report.html, /Not final, needs the sent statement/);
+    assert.equal(report.html.includes("Total from"), false);
     assert.equal(report.html.includes("$8,888.77"), false);
     assert.equal(report.html.includes("$0.00"), false);
+    assert.equal(report.html.includes("—"), false);
     assert.equal(report.summary.netToOwner, 0);
     assert.equal(report.summary.missingMonths, 12);
+  });
+
+  it("shows the year total only when all 12 months are final", () => {
+    const august = augustFinal();
+    const lockedMonths = Array.from({ length: 12 }, (_, index) => ({
+      year: 2026,
+      month: index + 1,
+      shareId: `month-${index + 1}`,
+      depositRecorded: true,
+      totals: index + 1 === august.month ? august.totals : { netAccommodation: 10, pmc: 1, expenses: 1, recurringCharges: 0, ownerPayout: 8 }
+    }));
+    const report = buildOwnerReport(jeff, [], [], settings, { reportKey: "1099", year: 2026, lockedMonths });
+    assert.match(report.html, /Every month has an emailed final statement/);
+    assert.equal(report.html.includes("Total from"), false);
+    assert.equal(report.html.includes("No final statements yet"), false);
+    assert.equal(report.html.includes("Not final"), false);
+    assert.match(report.html, /\$12,345\.26/);
   });
 
   it("still builds a draft statement from the current base fees", () => {

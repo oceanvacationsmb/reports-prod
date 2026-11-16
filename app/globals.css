@@ -578,6 +578,22 @@ select:disabled {
   margin-top: 8px;
 }
 
+.ten-ninety-nine-total {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  color: var(--ink);
+}
+
+.ten-ninety-nine-total p {
+  margin: 0;
+}
+
+.ten-ninety-nine-total p:first-child {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
 .missing-final {
   color: var(--muted);
 }
