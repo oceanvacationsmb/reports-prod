@@ -5,6 +5,7 @@ import {
   BarChart3,
   Building2,
   CircleDollarSign,
+  Ellipsis,
   Eye,
   FileArchive,
   Home,
@@ -19,14 +20,18 @@ import {
   Upload,
   X,
   Download,
+  FileText,
   Mail,
   Pencil,
   Printer,
+  Receipt,
   Send,
   TrendingUp
 } from "lucide-react";
 import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
+import { SimpleReportsPage } from "@/components/SimpleReportsPage";
+import { TaxesPage } from "@/components/TaxesPage";
 import { batchConfirmCopy, batchResultTitle, type BatchRecipient } from "@/lib/owner-batch";
 import { reportPropertyChoices, reportYearChoices, sameProperty } from "@/lib/reporting/report-options";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
@@ -156,16 +161,12 @@ type LockResponse = {
   report: ReportResponse;
 };
 
-type TabKey = "reports" | "income" | "owners" | "expenses" | "saved" | "settings";
+type TabKey = "reports" | "taxes" | "simpleReports" | "income" | "owners" | "expenses" | "saved" | "settings";
 
 const reportOptions: { key: ReportKey; label: string; adminOnly?: boolean }[] = [
   { key: "statement", label: "Statement" },
-  { key: "splitCleaning", label: "Split Cleaning" },
-  { key: "income", label: "Income" },
-  { key: "gri", label: "GRI" },
-  { key: "1099", label: "1099" },
   { key: "summary", label: "Owner Summary", adminOnly: true },
-  { key: "allOwnersTax", label: "Tax Summary", adminOnly: true }
+  { key: "1099", label: "1099" }
 ];
 
 const months = [
@@ -335,6 +336,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [fieldErrors, setFieldErrors] = useState<Record<number, string>>({});
   const [emailConfirm, setEmailConfirm] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [batchStep, setBatchStep] = useState<"loading" | "preview" | "confirm" | "result" | "error">("preview");
   const [batchError, setBatchError] = useState("");
   const [batchRecipients, setBatchRecipientsState] = useState<BatchRecipient[]>([]);
@@ -366,7 +368,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   );
 
   const tabs = [
-    { key: "reports" as const, label: "Reports", icon: BarChart3 },
+    { key: "reports" as const, label: "Statements", icon: BarChart3 },
+    { key: "taxes" as const, label: "Taxes", icon: Receipt },
+    { key: "simpleReports" as const, label: "Reports", icon: FileText },
     ...(isAdmin
       ? [
           { key: "income" as const, label: "Income", icon: TrendingUp },
@@ -1527,6 +1531,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     )
     .sort((a, b) => a.property.localeCompare(b.property) || a.type.localeCompare(b.type));
   const reportIsAdminOnly = ["summary", "allOwnersTax"].includes(reportForm.reportKey);
+  const moreTabKeys = new Set(["owners", "expenses", "saved", "settings"]);
   const includedRecipients = batchRecipients.filter((recipient) => recipient.included);
   const skippedRecipients = [
     ...batchRecipients.filter((recipient) => !recipient.included),
@@ -1544,13 +1549,50 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           {tabs.map((item) => {
             const Icon = item.icon;
             return (
-              <button key={item.key} className={tab === item.key ? "active" : ""} onClick={() => setTab(item.key)}>
+              <button
+                key={item.key}
+                className={`${tab === item.key ? "active" : ""} ${moreTabKeys.has(item.key) ? "more-tab" : ""}`}
+                onClick={() => {
+                  setMoreOpen(false);
+                  setTab(item.key);
+                }}
+              >
                 <Icon size={18} />
                 <span>{item.label}</span>
               </button>
             );
           })}
+          <button
+            type="button"
+            className={`nav-more ${moreTabKeys.has(tab) ? "active" : ""}`}
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen((open) => !open)}
+          >
+            <Ellipsis size={18} />
+            <span>More</span>
+          </button>
         </nav>
+        {moreOpen && (
+          <div className="nav-more-panel">
+            {tabs.filter((item) => moreTabKeys.has(item.key)).map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={tab === item.key ? "active" : ""}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    setTab(item.key);
+                  }}
+                >
+                  <Icon size={18} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <button className="logout-button" onClick={logout}>
           <LogOut size={18} />
           <span>Sign out</span>
@@ -1561,10 +1603,18 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         <header className="topbar">
           <div>
             <span>{isAdmin ? "Admin" : "Owner"} workspace</span>
-            <h1>{tab === "income" ? "Income" : selectedOwner?.name || user.displayName || "Reports"}</h1>
+            <h1>
+              {tab === "income"
+                ? "Income"
+                : tab === "taxes"
+                  ? "Taxes"
+                  : tab === "simpleReports"
+                    ? "Reports"
+                    : selectedOwner?.name || user.displayName || "Reports"}
+            </h1>
           </div>
           <div className="topbar-actions">
-            {isAdmin && tab !== "income" && (
+            {isAdmin && tab !== "income" && tab !== "taxes" && tab !== "simpleReports" && (
               <select value={selectedOwnerId} onChange={(event) => setSelectedOwnerId(event.target.value)}>
                 <option value="">All owners</option>
                 {visibleOwners.map((owner) => (
@@ -1584,6 +1634,18 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               <X size={16} />
             </button>
           </div>
+        )}
+
+        {tab === "taxes" && <TaxesPage />}
+
+        {tab === "simpleReports" && (
+          <SimpleReportsPage
+            owners={visibleOwners}
+            onEditOwner={(ownerId) => {
+              const owner = visibleOwners.find((item) => item._id === ownerId);
+              if (owner) editOwner(owner);
+            }}
+          />
         )}
 
         {tab === "reports" && (

@@ -673,12 +673,21 @@ function reservationTable(rows: CalculatedReservation[], includeOwnerPayout = tr
   `;
 }
 
+function bookedThrough(row: CalculatedReservation) {
+  const value = `${row.source} ${row.platform}`.toLowerCase();
+  if (value.includes("airbnb")) return "Airbnb";
+  if (value.includes("vrbo") || value.includes("homeaway")) return "VRBO";
+  if (value.includes("website") || value.includes("direct")) return "Website";
+  if (value.includes("booking")) return "Booking.com";
+  return (row.platform || row.source || "Unknown").trim() || "Unknown";
+}
+
 function griReservationTable(rows: CalculatedReservation[]) {
   const body = rows
     .map(
       (row) => `
       <tr>
-        <td>${escapeHtml(row.confirmationCode || row.id)}</td>
+        <td>${escapeHtml(bookedThrough(row))}</td>
         <td>${escapeHtml(`${formatShortDate(row.checkIn)} - ${formatShortDate(row.checkOut)}`)}</td>
         <td>${formatMoney(row.grossPayout)}</td>
       </tr>`
@@ -688,7 +697,7 @@ function griReservationTable(rows: CalculatedReservation[]) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Reservation Code</th><th>Check-In/Out</th><th>Gross Payout</th></tr></thead>
+        <thead><tr><th>Booked through</th><th>Check-In/Out</th><th>Gross Payout</th></tr></thead>
         <tbody>${body || '<tr><td colspan="3">No reservations found.</td></tr>'}</tbody>
       </table>
     </div>
