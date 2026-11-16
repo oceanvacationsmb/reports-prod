@@ -9,15 +9,24 @@ export default async function SharedReportPage({ params }: { params: Promise<{ s
   await connectDb();
   const savedReport = asPlain(await SavedReport.findOne({ shareId }).lean());
   if (!savedReport) notFound();
+  const updated = new Date(savedReport.updatedAt || savedReport.createdAt || Date.now());
+  const updatedLabel = Number.isNaN(updated.getTime())
+    ? ""
+    : updated.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
+  const finalStatement = savedReport.reportKey === "statement";
 
   return (
     <main className="shared-report-screen">
       <div className="shared-report-top">
         <div>
           <span>Shared report</span>
-          <h1>{savedReport.reportTitle}</h1>
+          {finalStatement ? (
+            <p className="share-status">Final statement, last updated {updatedLabel}.</p>
+          ) : (
+            <h1>{savedReport.reportTitle}</h1>
+          )}
         </div>
-        <p>{savedReport.periodLabel}</p>
+        {!finalStatement && <p>{savedReport.periodLabel}</p>}
       </div>
       <section
         className="report-preview"

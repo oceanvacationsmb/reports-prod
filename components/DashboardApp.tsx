@@ -8,6 +8,7 @@ import {
   Eye,
   FileArchive,
   Home,
+  Lock,
   LogOut,
   MapPinned,
   Plus,
@@ -124,6 +125,34 @@ type EmailDraft = {
   subject: string;
   message: string;
   reportLink: string;
+};
+
+type StatementHistoryItem = {
+  who: string;
+  when: string;
+  beforeRecurring: { label: string; amount: number }[];
+  afterRecurring: { label: string; amount: number }[];
+};
+
+type StatementLockState = {
+  ownerId: string;
+  year: number;
+  month: number;
+  locked: boolean;
+  lockedAt: string;
+  shareId: string;
+  recurring: { label: string; amount: number }[];
+  history: StatementHistoryItem[];
+};
+
+type LockResponse = {
+  created?: boolean;
+  locked: boolean;
+  lockedAt?: string;
+  shareId: string;
+  recurring: { label: string; amount: number }[];
+  history: StatementHistoryItem[];
+  report: ReportResponse;
 };
 
 type TabKey = "reports" | "income" | "owners" | "expenses" | "saved" | "settings";
@@ -299,6 +328,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [statementEdit, setStatementEdit] = useState<StatementEdit | null>(null);
+  const [statementLock, setStatementLock] = useState<StatementLockState | null>(null);
+  const [modifyOpen, setModifyOpen] = useState(false);
+  const [modifyLines, setModifyLines] = useState<{ label: string; amount: string }[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<number, string>>({});
+  const [emailConfirm, setEmailConfirm] = useState(false);
+  const amountRefs = useRef<Array<HTMLInputElement | null>>([]);
   const reportPreviewRef = useRef<HTMLDivElement | null>(null);
   const propertySettingsRef = useRef<HTMLFormElement | null>(null);
 
@@ -646,26 +681,58 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     await runReport();
   }
 
-  async function runReport() {
+  async function runReport(overrides?: { reportKey?: ReportKey; month?: string }) {
+    const reportKey = overrides?.reportKey || reportForm.reportKey;
+    const monthField = overrides?.month || reportForm.month;
+    if (overrides) {
+      setReportForm((current) => ({
+        ...current,
+        reportKey,
+        month: monthField
+      }));
+    }
     setBusy("report");
     setError("");
+    setEmailConfirm(false);
     setCurrentReport(null);
     setCurrentSavedReport(null);
+    setStatementLock(null);
+    setModifyOpen(false);
     try {
-      const month = reportForm.month === "full-year" ? undefined : Number(reportForm.month);
+      const month = monthField === "full-year" ? undefined : Number(monthField);
       const { startDate, endDate, ...form } = reportForm;
       const body = {
         ...form,
-        ...(reportUsesDateRange ? { startDate, endDate } : {}),
+        reportKey,
+        ...(reportKey === "splitCleaning" ? { startDate, endDate } : {}),
         ownerId: isAdmin ? selectedOwnerId : user.ownerId,
-        month: reportUsesDateRange ? undefined : month,
+        month: reportKey === "splitCleaning" ? undefined : month,
         year: Number(reportForm.year)
       };
-      const data = await api<{ report: ReportResponse }>("/api/reports", {
+      const data = await api<{
+        report: ReportResponse;
+        locked?: boolean;
+        lockedAt?: string;
+        shareId?: string;
+        recurring?: { label: string; amount: number }[];
+        history?: StatementHistoryItem[];
+      }>("/api/reports", {
         method: "POST",
         body: JSON.stringify(body)
       });
       setCurrentReport(data.report);
+      if (reportKey === "statement" && month) {
+        setStatementLock({
+          ownerId: isAdmin ? selectedOwnerId : user.ownerId || "",
+          year: Number(reportForm.year),
+          month,
+          locked: Boolean(data.locked),
+          lockedAt: data.lockedAt || "",
+          shareId: data.shareId || "",
+          recurring: data.recurring || [],
+          history: data.history || []
+        });
+      }
       flash("Report generated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to generate report.");
@@ -822,13 +889,60 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     return saveReport();
   }
 
+  function permanentShareId() {
+    if (!statementLock?.locked || !statementLock.shareId) return "";
+    if (reportForm.reportKey !== "statement" || reportForm.month === "full-year") return "";
+    const ownerId = isAdmin ? selectedOwnerId : user.ownerId || "";
+    if (statementLock.ownerId !== ownerId) return "";
+    if (statementLock.year !== Number(reportForm.year) || statementLock.month !== Number(reportForm.month)) return "";
+    return statementLock.shareId;
+  }
+
+  function statementMatches() {
+    if (!statementLock || reportForm.reportKey !== "statement" || reportForm.month === "full-year") return false;
+    const ownerId = isAdmin ? selectedOwnerId : user.ownerId || "";
+    return statementLock.ownerId === ownerId && statementLock.year === Number(reportForm.year) && statementLock.month === Number(reportForm.month);
+  }
+
+  function ownerShortName(name?: string) {
+    const text = (name || "the owner").trim();
+    const parts = text.split(" - ");
+    return parts.length > 1 ? parts[parts.length - 1].trim() : text;
+  }
+
+  function formatDay(value: string) {
+    const date = new Date(value);
+    if (!value || Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function changedHistoryLines(entry: StatementHistoryItem) {
+    const labels = [...new Set([...entry.beforeRecurring.map((line) => line.label), ...entry.afterRecurring.map((line) => line.label)])];
+    return labels.flatMap((label) => {
+      const before = entry.beforeRecurring.find((line) => line.label === label)?.amount;
+      const after = entry.afterRecurring.find((line) => line.label === label)?.amount;
+      if (before === after) return [];
+      return [{ label, before, after }];
+    });
+  }
+
+  function amountError(value: string) {
+    return value.trim() !== "" && Number.isFinite(Number(value)) ? "" : "Enter an amount, like 150";
+  }
+
+  function formatWhen(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  }
+
   async function downloadPdf() {
     try {
       setBusy("pdf");
-      const saved = await ensureSavedReport();
-      if (!saved) return;
+      const shareId = permanentShareId() || (await ensureSavedReport())?.shareId;
+      if (!shareId) return;
       const link = document.createElement("a");
-      link.href = `/api/reports/pdf/${saved.shareId}`;
+      link.href = `/api/reports/pdf/${shareId}`;
       link.download = `${currentReport?.title || "ocean-vacations-report"}.pdf`;
       document.body.appendChild(link);
       link.click();
@@ -843,6 +957,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   async function printPdf() {
     try {
       setBusy("print");
+      const shareId = permanentShareId();
+      if (shareId) {
+        window.open(`${window.location.origin}/print/${shareId}?print=1`, "_blank", "noopener,noreferrer");
+        return;
+      }
       const saved = await ensureSavedReport();
       if (!saved) return;
       window.open(`${printLink(saved)}?print=1`, "_blank", "noopener,noreferrer");
@@ -853,19 +972,132 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     }
   }
 
+  function openModify() {
+    if (!statementLock) return;
+    setError("");
+    setFieldErrors({});
+    setEmailConfirm(false);
+    setModifyLines(
+      statementLock.recurring.length
+        ? statementLock.recurring.map((line) => ({ label: line.label, amount: String(line.amount) }))
+        : [{ label: "", amount: "0" }]
+    );
+    setModifyOpen(true);
+  }
+
+  async function saveModification(event: React.FormEvent) {
+    event.preventDefault();
+    if (!statementLock?.locked) return;
+    const errors: Record<number, string> = {};
+    modifyLines.forEach((line, index) => {
+      if (!line.label.trim()) return;
+      const message = amountError(line.amount);
+      if (message) errors[index] = message;
+    });
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      const first = Number(Object.keys(errors)[0]);
+      amountRefs.current[first]?.focus();
+      return;
+    }
+    setFieldErrors({});
+    const recurring = modifyLines
+      .map((line) => ({ label: line.label.trim(), amount: Number(line.amount) }))
+      .filter((line) => line.label);
+    try {
+      setBusy("modify");
+      setError("");
+      const data = await api<LockResponse>("/api/locked-statements/modify", {
+        method: "POST",
+        body: JSON.stringify({
+          ownerId: statementLock.ownerId,
+          year: statementLock.year,
+          month: statementLock.month,
+          recurring
+        })
+      });
+      setCurrentReport(data.report);
+      setStatementLock({
+        ...statementLock,
+        locked: true,
+        lockedAt: data.lockedAt || statementLock.lockedAt,
+        shareId: data.shareId,
+        recurring: data.recurring || recurring,
+        history: data.history || []
+      });
+      setModifyOpen(false);
+      flash("Statement updated and locked again. The same link now shows this version.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to modify this statement.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function emailButtonLabel() {
+    if (!isAdmin) return "Email client";
+    if (reportForm.reportKey === "1099") return "Email owner";
+    if (reportForm.reportKey === "statement" && reportForm.month !== "full-year") {
+      return permanentShareId() ? "Resend to owner" : "Email owner";
+    }
+    return "Email client";
+  }
+
   async function openEmailClient() {
+    const monthlyDraft = isAdmin && reportForm.reportKey === "statement" && reportForm.month !== "full-year" && !permanentShareId();
+    if (monthlyDraft) {
+      setEmailConfirm(true);
+      setModifyOpen(false);
+      return;
+    }
+    await sendOwnerEmail();
+  }
+
+  async function sendOwnerEmail() {
     try {
       setBusy("email");
-      const saved = await ensureSavedReport();
-      if (!saved) return;
-      const link = printLink(saved);
+      setEmailConfirm(false);
+      const monthlyStatement = isAdmin && reportForm.reportKey === "statement" && reportForm.month !== "full-year";
+      let shareId = permanentShareId();
+      let periodLabel = currentReport?.periodLabel;
+      if (!shareId && monthlyStatement) {
+        const data = await api<LockResponse>("/api/locked-statements", {
+          method: "POST",
+          body: JSON.stringify({
+            ownerId: selectedOwnerId,
+            year: Number(reportForm.year),
+            month: Number(reportForm.month)
+          })
+        });
+        shareId = data.shareId;
+        periodLabel = data.report.periodLabel;
+        setCurrentReport(data.report);
+        setStatementLock({
+          ownerId: selectedOwnerId,
+          year: Number(reportForm.year),
+          month: Number(reportForm.month),
+          locked: true,
+          lockedAt: data.lockedAt || new Date().toISOString(),
+          shareId: data.shareId,
+          recurring: data.recurring || [],
+          history: data.history || []
+        });
+        setModifyOpen(false);
+        flash(data.created ? "Final statement saved. This link is now locked." : "This month is already final. The email uses the same link.");
+      }
+      const link = shareId
+        ? `${window.location.origin}/share/${shareId}`
+        : printLink(await ensureSavedReport().then((saved) => {
+            if (!saved) throw new Error("Unable to prepare email.");
+            return saved;
+          }));
       const ownerEmail = selectedOwner?.email || "";
       setEmailDraft({
         to: ownerEmail,
         subject: `Your Ocean Vacations ${reportForm.reportKey === "splitCleaning" ? "Cleaning Fee Report" : "Statement"} is Ready`,
         message: reportForm.reportKey === "splitCleaning"
           ? `Hi,\n\nHere is your cleaning-fee report for ${currentReport?.periodLabel || `${reportForm.startDate} - ${reportForm.endDate}`}.\n\nThank you,\nOcean Vacations.`
-          : `Hi,\n\nHere is your statement for ${currentReport?.periodLabel || (reportForm.month === "full-year" ? reportForm.year : `${months[Number(reportForm.month) - 1]} ${reportForm.year}`)}.\nThe transfer will be processed on ${nextTransferDate()}.\n\nThank you,\nOcean Vacations.`,
+          : `Hi,\n\nHere is your statement for ${periodLabel || currentReport?.periodLabel || (reportForm.month === "full-year" ? reportForm.year : `${months[Number(reportForm.month) - 1]} ${reportForm.year}`)}.\nThe transfer will be processed on ${nextTransferDate()}.\n\nThank you,\nOcean Vacations.`,
         reportLink: link
       });
     } catch (err) {
@@ -944,8 +1176,16 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
   useEffect(() => {
     const node = reportPreviewRef.current;
-    if (!node || reportForm.reportKey !== "statement") return;
+    if (!node) return;
     const listener = (event: MouseEvent) => {
+      const openMonth = (event.target as HTMLElement).closest<HTMLAnchorElement>("[data-open-statement-month]");
+      if (openMonth) {
+        event.preventDefault();
+        const month = openMonth.dataset.openStatementMonth || "";
+        void runReport({ reportKey: "statement", month });
+        return;
+      }
+      if (reportForm.reportKey !== "statement") return;
       void handleStatementTableAction(event);
     };
     node.addEventListener("click", listener, true);
@@ -1335,6 +1575,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   value={reportRequiresFullYear ? "full-year" : reportForm.month}
                   onChange={(event) => setReportForm({ ...reportForm, month: event.target.value })}
                   disabled={reportRequiresFullYear}
+                  title={reportRequiresFullYear ? "The 1099 covers the full year." : undefined}
                 >
                   {reportSupportsFullYear && <option value="full-year">Full year</option>}
                   {!reportRequiresFullYear && months.map((month, index) => (
@@ -1378,16 +1619,18 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               <section className="report-stage">
                 <div className="report-toolbar">
                   <div className="report-actions">
-                    {reportForm.reportKey === "statement" && (
+                    {reportForm.reportKey === "statement" && !permanentShareId() && (
                       <button className="secondary-action" type="button" onClick={openMissingReservation}>
                         <Plus size={18} />
                         Add missing reservation
                       </button>
                     )}
-                    <button className="secondary-action" onClick={saveReport} disabled={busy === "save-report"}>
-                      <Save size={18} />
-                      {busy === "save-report" ? "Saving..." : "Save snapshot"}
-                    </button>
+                    {!permanentShareId() && (
+                      <button className="secondary-action" onClick={saveReport} disabled={busy === "save-report"}>
+                        <Save size={18} />
+                        {busy === "save-report" ? "Saving..." : "Save snapshot"}
+                      </button>
+                    )}
                     <button className="secondary-action" onClick={downloadPdf} disabled={busy === "pdf" || busy === "save-report"}>
                       <Download size={18} />
                       {busy === "pdf" ? "Downloading..." : "Download PDF"}
@@ -1398,7 +1641,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </button>
                     <button className="secondary-action" onClick={openEmailClient} disabled={busy === "email" || busy === "save-report"}>
                       <Mail size={18} />
-                      Email client
+                      {emailButtonLabel()}
                     </button>
                     {reportForm.reportKey === "allOwnersTax" && isAdmin && (
                       <button className="secondary-action" type="button" onClick={() => openTaxSettings()}>
@@ -1408,6 +1651,130 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     )}
                   </div>
                 </div>
+                {statementMatches() && statementLock?.locked && (
+                  <div className="message statement-lock">
+                    <div className="status-pill final">
+                      <Lock size={16} aria-hidden="true" />
+                      <span>Final. Emailed to {ownerShortName(selectedOwner?.name)} on {formatDay(statementLock.lockedAt)}.</span>
+                    </div>
+                    <a href={`/share/${statementLock.shareId}`} target="_blank" rel="noreferrer">Open the permanent link</a>
+                    {isAdmin && (
+                      <button className="secondary-action" type="button" onClick={openModify}>
+                        <Pencil size={16} />
+                        Modify
+                      </button>
+                    )}
+                  </div>
+                )}
+                {emailConfirm && statementMatches() && statementLock && !statementLock.locked && (
+                  <form className="editor-panel email-confirm" onSubmit={(event) => { event.preventDefault(); void sendOwnerEmail(); }}>
+                    <h2>Email {ownerShortName(selectedOwner?.name)} and lock {months[Number(reportForm.month) - 1]}?</h2>
+                    <p>You can still modify later; each change is recorded.</p>
+                    <div className="inline-actions">
+                      <button className="secondary-action" type="button" onClick={() => setEmailConfirm(false)}>Cancel</button>
+                      <button className="primary-action" type="submit" disabled={busy === "email"}>
+                        {busy === "email" ? "Saving..." : `Email ${ownerShortName(selectedOwner?.name)} and lock`}
+                      </button>
+                    </div>
+                  </form>
+                )}
+                {statementMatches() && statementLock?.locked && statementLock.history.length > 0 && (
+                  <section className="editor-panel statement-history" aria-label="Earlier versions">
+                    <div className="panel-heading">
+                      <h2>Earlier versions</h2>
+                    </div>
+                    {statementLock.history.map((entry) => {
+                      const changes = changedHistoryLines(entry);
+                      return (
+                        <div key={`${entry.when}-${entry.who}`}>
+                          <p><strong>{formatWhen(entry.when)}</strong> by {entry.who}</p>
+                          <div className="table-wrap">
+                            <table className="history-table">
+                              <thead><tr><th>Line</th><th>Before</th><th>After</th></tr></thead>
+                              <tbody>
+                                {(changes.length ? changes : [{ label: "Recurring charges", before: undefined, after: undefined }]).map((row) => (
+                                  <tr key={row.label}>
+                                    <td>{row.label}</td>
+                                    <td>{row.before == null ? "—" : money(row.before)}</td>
+                                    <td>{row.after == null ? "—" : money(row.after)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </section>
+                )}
+                {statementMatches() && statementLock && !statementLock.locked && isAdmin && (
+                  <div className="status-pill draft">Draft, not sent</div>
+                )}
+                {modifyOpen && statementLock?.locked && (
+                  <form className="editor-panel statement-modify" onSubmit={saveModification}>
+                    <div className="panel-heading">
+                      <Pencil size={18} />
+                      <h2>Modify this final statement</h2>
+                    </div>
+                    <p className="muted-copy">Saving does not email the owner again. The same link updates, and this version stays in Earlier versions.</p>
+                    {modifyLines.length === 0 && <p className="muted-copy">No lines yet. Add a charge, or save to clear this month&apos;s fees.</p>}
+                    {modifyLines.map((line, index) => (
+                      <div className="modify-line" key={index}>
+                        <label>
+                          Description
+                          <input
+                            value={line.label}
+                            onChange={(event) =>
+                              setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item)))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Amount
+                          <span className={fieldErrors[index] ? "amount-field invalid" : "amount-field"}>
+                            <span aria-hidden="true">$</span>
+                            <input
+                              ref={(node) => { amountRefs.current[index] = node; }}
+                              value={line.amount}
+                              inputMode="decimal"
+                              aria-invalid={fieldErrors[index] ? "true" : "false"}
+                              aria-describedby={fieldErrors[index] ? `modify-amount-error-${index}` : undefined}
+                              onChange={(event) => {
+                                setFieldErrors((current) => {
+                                  if (!current[index]) return current;
+                                  const next = { ...current };
+                                  delete next[index];
+                                  return next;
+                                });
+                                setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, amount: event.target.value } : item)));
+                              }}
+                            />
+                          </span>
+                          {fieldErrors[index] && <span className="field-error" id={`modify-amount-error-${index}`}>{fieldErrors[index]}</span>}
+                        </label>
+                        <button
+                          className="secondary-action"
+                          type="button"
+                          onClick={() => setModifyLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <div className="inline-actions">
+                      <button className="secondary-action" type="button" onClick={() => { setModifyOpen(false); setFieldErrors({}); }}>
+                        Cancel
+                      </button>
+                      <button className="secondary-action" type="button" onClick={() => setModifyLines((current) => [...current, { label: "", amount: "" }])}>
+                        <Plus size={16} />
+                        Add line
+                      </button>
+                      <button className="primary-action" type="submit" disabled={busy === "modify"}>
+                        {busy === "modify" ? "Saving..." : "Save and lock again"}
+                      </button>
+                    </div>
+                  </form>
+                )}
                 <div ref={reportPreviewRef} className="report-preview" dangerouslySetInnerHTML={{ __html: currentReport.html }} />
               </section>
             )}
