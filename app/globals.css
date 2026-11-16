@@ -1970,6 +1970,34 @@ tr:last-child td {
   background: #f6efe1;
 }
 
+.tax-print-heading span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tax-print-heading h2,
+.tax-group h2 {
+  margin: 4px 0 0;
+  font-size: 1.15rem;
+}
+
+.tax-group {
+  margin-top: 22px;
+}
+
+.tax-sheet table th:nth-child(n + 2),
+.tax-sheet table td:nth-child(n + 2) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-sheet .control-grid {
+  grid-template-columns: minmax(140px, 180px) minmax(120px, 140px) auto;
+  justify-content: start;
+}
+
 @page {
   size: letter portrait;
   margin: 0.45in;
@@ -1992,6 +2020,7 @@ tr:last-child td {
   .side-nav,
   .topbar,
   .report-actions,
+  .screen-controls,
   .gri-address-hint {
     display: none !important;
   }
@@ -2024,6 +2053,7 @@ tr:last-child td {
   }
 
   .report-hero,
+  .tax-group,
   .metric-grid,
   .statement-summary-card,
   .property-header,
@@ -2163,6 +2193,10 @@ tr:last-child td {
 }
 
 @media (max-width: 760px) {
+  .tax-sheet .control-grid {
+    grid-template-columns: 1fr;
+  }
+
   body {
     background-size: 26px 26px;
   }
@@ -2200,14 +2234,17 @@ tr:last-child td {
 
   .side-nav nav {
     height: 100%;
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 1fr;
+    display: flex;
+    overflow-x: auto;
     gap: 6px;
   }
 
   .side-nav button {
+    width: auto;
     min-height: 58px;
+    min-width: 84px;
+    flex: 0 0 auto;
+    display: flex;
     justify-content: center;
     flex-direction: column;
     gap: 3px;

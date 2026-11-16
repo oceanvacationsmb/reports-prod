@@ -19,14 +19,18 @@ import {
   Upload,
   X,
   Download,
+  FileText,
   Mail,
   Pencil,
   Printer,
+  Receipt,
   Send,
   TrendingUp
 } from "lucide-react";
 import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
+import { SimpleReportsPage } from "@/components/SimpleReportsPage";
+import { TaxesPage } from "@/components/TaxesPage";
 import { batchConfirmCopy, type BatchRecipient } from "@/lib/owner-batch";
 import { reportPropertyChoices, reportYearChoices, sameProperty } from "@/lib/reporting/report-options";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
@@ -156,16 +160,12 @@ type LockResponse = {
   report: ReportResponse;
 };
 
-type TabKey = "reports" | "income" | "owners" | "expenses" | "saved" | "settings";
+type TabKey = "reports" | "taxes" | "simpleReports" | "income" | "owners" | "expenses" | "saved" | "settings";
 
 const reportOptions: { key: ReportKey; label: string; adminOnly?: boolean }[] = [
   { key: "statement", label: "Statement" },
-  { key: "splitCleaning", label: "Split Cleaning" },
-  { key: "income", label: "Income" },
-  { key: "gri", label: "GRI" },
-  { key: "1099", label: "1099" },
   { key: "summary", label: "Owner Summary", adminOnly: true },
-  { key: "allOwnersTax", label: "Tax Summary", adminOnly: true }
+  { key: "1099", label: "1099" }
 ];
 
 const months = [
@@ -366,7 +366,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   );
 
   const tabs = [
-    { key: "reports" as const, label: "Reports", icon: BarChart3 },
+    { key: "reports" as const, label: "Statements", icon: BarChart3 },
+    { key: "taxes" as const, label: "Taxes", icon: Receipt },
+    { key: "simpleReports" as const, label: "Reports", icon: FileText },
     ...(isAdmin
       ? [
           { key: "income" as const, label: "Income", icon: TrendingUp },
@@ -1558,10 +1560,18 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         <header className="topbar">
           <div>
             <span>{isAdmin ? "Admin" : "Owner"} workspace</span>
-            <h1>{tab === "income" ? "Income" : selectedOwner?.name || user.displayName || "Reports"}</h1>
+            <h1>
+              {tab === "income"
+                ? "Income"
+                : tab === "taxes"
+                  ? "Report Taxes"
+                  : tab === "simpleReports"
+                    ? "Reports"
+                    : selectedOwner?.name || user.displayName || "Reports"}
+            </h1>
           </div>
           <div className="topbar-actions">
-            {isAdmin && tab !== "income" && (
+            {isAdmin && tab !== "income" && tab !== "taxes" && tab !== "simpleReports" && (
               <select value={selectedOwnerId} onChange={(event) => setSelectedOwnerId(event.target.value)}>
                 <option value="">All owners</option>
                 {visibleOwners.map((owner) => (
@@ -1582,6 +1592,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
             </button>
           </div>
         )}
+
+        {tab === "taxes" && <TaxesPage />}
+
+        {tab === "simpleReports" && <SimpleReportsPage owners={visibleOwners} />}
 
         {tab === "reports" && (
           <section className="view-band">
