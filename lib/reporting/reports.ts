@@ -428,10 +428,11 @@ function reportTaxRows(owner: OwnerLike, rows: CalculatedReservation[], properti
   const grouped = new Map<string, { property: string; amountToReport: number; totalTax: number }>();
 
   for (const row of rows) {
-    if (!isTaxReportableReservation(row) || row.taxes <= 0) continue;
+    const amount = payoutAmountToReport(row);
+    if (amount <= 0) continue;
     const property = row.property || "Unassigned";
     const current = grouped.get(property) || { property, amountToReport: 0, totalTax: 0 };
-    current.amountToReport += row.netAccommodation;
+    current.amountToReport += amount;
     current.totalTax += row.taxes;
     grouped.set(property, current);
   }
