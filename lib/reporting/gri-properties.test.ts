@@ -103,6 +103,49 @@ describe("GRI property address", () => {
     assert.match(report.html, /<strong>NMB - 3104-2<\/strong>/);
   });
 
+  it("uses the report address saved on the exact name MB - Tuscan A", () => {
+    const address = "1000 Example Drive, Myrtle Beach, SC 29577";
+    const report = buildOwnerReport(owner, [stay("MB - Tuscan A")], [], settings, {
+      reportKey: "gri",
+      property: "MB - Tuscan A",
+      year: 2026
+    }, [{ name: "MB - Tuscan A", reportAddress: address }]);
+    assert.equal(griPropertyAddress("MB - Tuscan A", [{ name: "MB - Tuscan A", reportAddress: address }], []), address);
+    assert.ok(report.html.includes(address));
+    assert.equal(report.html.includes("gri-address-hint"), false);
+    assert.equal(report.title, `${address} GRI Report`);
+  });
+
+  it("uses the address on MB-Tuscan-A when the exact MB - Tuscan A row is blank", () => {
+    const address = "1000 Example Drive, Myrtle Beach, SC 29577";
+    const properties: PropertyLike[] = [
+      { name: "MB - Tuscan A", reportAddress: "" },
+      { name: "MB-Tuscan-A", reportAddress: address }
+    ];
+    const report = buildOwnerReport(owner, [stay("MB - Tuscan A")], [], settings, {
+      reportKey: "gri",
+      property: "MB - Tuscan A",
+      year: 2026
+    }, properties);
+    assert.equal(griPropertyAddress("MB - Tuscan A", properties, [stay("MB - Tuscan A")]), address);
+    assert.ok(report.html.includes(address));
+    assert.equal(report.html.includes("gri-address-hint"), false);
+  });
+
+  it("does not borrow the address saved for Tuscan A", () => {
+    const address = "1000 Example Drive, Myrtle Beach, SC 29577";
+    const properties: PropertyLike[] = [{ name: "Tuscan A", reportAddress: address }];
+    const report = buildOwnerReport(owner, [stay("MB - Tuscan A")], [], settings, {
+      reportKey: "gri",
+      property: "MB - Tuscan A",
+      year: 2026
+    }, properties);
+    assert.equal(griPropertyAddress("MB - Tuscan A", properties, []), "");
+    assert.equal(report.html.includes(address), false);
+    assert.ok(report.html.includes("gri-address-hint"));
+    assert.ok(report.html.includes("MB - Tuscan A"));
+  });
+
   it("opens the selected property when the saved name differs only by punctuation", () => {
     const address = "1463 Basin Trail, Murrells Inlet, South Carolina 29576, United States of America";
     const selected = stay("GC - 1463");
