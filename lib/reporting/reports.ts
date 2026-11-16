@@ -961,18 +961,18 @@ function final1099Body(finals: FinalMonthInput[], year: number) {
     .map((row) => {
       const label = monthLabels[row.month - 1];
       if (!row.final) {
-        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4">Not final, needs the sent statement <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
+        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4"><span class="missing-final-copy">Not final, needs the sent statement</span> <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
       }
       if (!row.depositRecorded) {
         return `<tr><td>${escapeHtml(label)}</td><td colspan="3">Fees saved (${formatMoney(row.expenses)})</td><td>Deposit not recorded</td></tr>`;
       }
       return `
       <tr>
-        <td>${escapeHtml(label)}</td>
-        <td>${formatMoney(row.netAccommodation)}</td>
-        <td>${formatMoney(row.pmc)}</td>
-        <td>${formatMoney(row.expenses)}</td>
-        <td>${formatMoney(row.netToOwner)}</td>
+        <td data-label="Month">${escapeHtml(label)}</td>
+        <td data-label="Net accommodation">${formatMoney(row.netAccommodation)}</td>
+        <td data-label="PMC">${formatMoney(row.pmc)}</td>
+        <td data-label="Expenses">${formatMoney(row.expenses)}</td>
+        <td data-label="Net to owner">${formatMoney(row.netToOwner)}</td>
       </tr>`;
     })
     .join("");
@@ -998,7 +998,7 @@ function final1099Body(finals: FinalMonthInput[], year: number) {
     includedCount: included.length,
     html: `
       ${totalBlock}
-      <div class="table-wrap">
+      <div class="table-wrap ten-ninety-nine-table">
         <table>
           <thead><tr><th>Month</th><th>Net Accommodation</th><th>PMC</th><th>Expenses</th><th>Net To Owner</th></tr></thead>
           <tbody>${rows}</tbody>
