@@ -1607,7 +1607,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               {tab === "income"
                 ? "Income"
                 : tab === "taxes"
-                  ? "Report Taxes"
+                  ? "Taxes"
                   : tab === "simpleReports"
                     ? "Reports"
                     : selectedOwner?.name || user.displayName || "Reports"}
@@ -2698,7 +2698,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 <button className="primary-action" type="button" onClick={() => void openBatchEmail()}>Try again</button>
               )}
               {batchStep === "preview" && (
-                <button className="primary-action" type="submit" disabled={!batchRecipients.some((recipient) => recipient.included)}>Continue</button>
+                <button className="primary-action" type="submit" disabled={!batchRecipients.some((recipient) => recipient.included)}>
+                  {`Email ${includedRecipients.length} ${includedRecipients.length === 1 ? "owner" : "owners"}`}
+                </button>
               )}
               {batchStep === "confirm" && (
                 <button className="primary-action" type="submit" disabled={busy === "batch-email"}>

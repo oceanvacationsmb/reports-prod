@@ -1217,11 +1217,19 @@ select:disabled {
   gap: 8px;
 }
 
+.batch-skipped-group h3,
+.batch-skipped-group strong {
+  color: #4a5c5a;
+}
+
 .batch-skipped-group h3 {
   margin: 8px 0 0;
-  color: var(--muted);
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.batch-skipped-group strong {
+  font-weight: 650;
 }
 
 .statement-edit-modal h2,
@@ -1332,6 +1340,7 @@ select:disabled {
   flex-basis: 100%;
   margin: 0;
   text-align: left;
+  color: #4a5c5a;
 }
 
 .report-document {
@@ -2062,6 +2071,34 @@ tr:last-child td {
 .tax-group h2 {
   margin: 4px 0 0;
   font-size: 1.15rem;
+}
+
+.tax-empty-note {
+  margin: 4px 0 0;
+  color: #4a5c5a;
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.simple-report-form {
+  align-items: start;
+}
+
+.tax-sheet table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.tax-sheet table th:first-child,
+.tax-sheet table td:first-child {
+  width: 50%;
+}
+
+.tax-sheet table th:nth-child(2),
+.tax-sheet table td:nth-child(2),
+.tax-sheet table th:nth-child(3),
+.tax-sheet table td:nth-child(3) {
+  width: 25%;
 }
 
 .tax-group {
