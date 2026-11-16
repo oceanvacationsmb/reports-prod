@@ -54,8 +54,8 @@ const properties: PropertyLike[] = [
 
 describe("property tax report", () => {
   it("keeps October NMB - 3104-2 at gross minus tax, separate from GC - 1463", () => {
-    const jacob = owner("jacob", "3104 - JACOB ZROYA", ["NMB - 3104-2", "NMB - 3104-1"]);
-    const nicole = owner("nicole", "1463 - NICOLE", ["GC - 1463"]);
+    const jacob = owner("jacob", "3104 - RIVER", ["NMB - 3104-2", "NMB - 3104-1"]);
+    const nicole = owner("nicole", "1463 - CASEY", ["GC - 1463"]);
     const report = buildPropertyTaxReport(
       [nicole, jacob, { _id: "all", name: "ALL PROPERTIES", type: "payout", percent: 0 }],
       new Map([
@@ -63,7 +63,7 @@ describe("property tax report", () => {
           "jacob",
           [
             stay({
-              id: "kristin-crisp",
+              id: "harbor-stay",
               property: "NMB - 3104-2",
               guestName: "Casey Guest",
               source: "VRBO",
@@ -125,7 +125,7 @@ describe("property tax report", () => {
           "all",
           [
             stay({
-              id: "kristin-crisp",
+              id: "harbor-stay",
               property: "NMB - 3104-2",
               source: "VRBO",
               platform: "HomeAway",
