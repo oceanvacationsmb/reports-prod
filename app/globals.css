@@ -1120,6 +1120,14 @@ select:disabled {
 .batch-recipient-list span,
 .batch-recipient-list a {
   overflow-wrap: anywhere;
+  color: var(--jade-dark);
+  font-weight: 800;
+}
+
+.modal-close:focus-visible,
+.batch-recipient-list a:focus-visible {
+  outline: 2px solid #07574f;
+  outline-offset: 3px;
 }
 
 .batch-print-page {

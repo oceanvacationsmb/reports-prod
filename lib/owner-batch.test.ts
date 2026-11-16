@@ -28,8 +28,9 @@ describe("owner batch", () => {
     );
     assert.equal(recipients.some((recipient) => recipient.name === "ALL PROPERTIES"), false);
     const copy = batchConfirmCopy("October", recipients);
-    assert.equal(copy.title, "Email 2 owners and lock October?");
-    assert.match(copy.detail, /locks that owner's statement/);
+    assert.equal(copy.confirmButton, "Lock 2 statements and open Gmail");
+    assert.match(copy.confirmDetail, /Locking cannot be undone/);
+    assert.match(copy.confirmDetail, /Nothing is sent until you press Send in Gmail/);
   });
 
   it("builds one Gmail draft per locked share link", () => {

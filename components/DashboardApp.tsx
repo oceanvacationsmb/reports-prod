@@ -335,6 +335,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [fieldErrors, setFieldErrors] = useState<Record<number, string>>({});
   const [emailConfirm, setEmailConfirm] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [batchStep, setBatchStep] = useState<"loading" | "preview" | "confirm" | "result" | "error">("preview");
+  const [batchError, setBatchError] = useState("");
   const [batchRecipients, setBatchRecipientsState] = useState<BatchRecipient[]>([]);
   const [batchResult, setBatchResult] = useState<Array<{ name: string; email: string; gmailUrl?: string; error?: string; created?: boolean }>>([]);
   const [batchSkipped, setBatchSkipped] = useState<BatchRecipient[]>([]);
@@ -1118,15 +1120,18 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   async function openBatchEmail() {
     if (!batchMonth) return;
     setBusy("batch-email");
-    setError("");
+    setBatchError("");
     setBatchResult([]);
     setBatchSkipped([]);
+    setBatchStep("loading");
+    setBatchOpen(true);
     try {
       const data = await api<{ recipients: BatchRecipient[] }>(`/api/owner-batch?month=${batchMonth}&year=${reportForm.year}`);
       setBatchRecipientsState(data.recipients);
-      setBatchOpen(true);
+      setBatchStep(data.recipients.length ? "preview" : "preview");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load owners.");
+      setBatchError(err instanceof Error ? err.message : "Unable to load owners.");
+      setBatchStep("error");
     } finally {
       setBusy("");
     }
@@ -1146,8 +1151,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       });
       setBatchResult(data.locked);
       setBatchSkipped(data.skipped);
+      setBatchStep("result");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to lock the statements.");
+      setBatchError(err instanceof Error ? err.message : "Unable to lock the statements.");
+      setBatchStep("error");
     } finally {
       setBusy("");
     }
@@ -1690,18 +1697,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                       <Printer size={18} />
                       {busy === "print" ? "Opening..." : "Print PDF"}
                     </button>
-                    {batchMonth > 0 && (
-                      <button className="secondary-action" type="button" onClick={printAllOwners}>
-                        <Printer size={18} />
-                        Print all
-                      </button>
-                    )}
-                    {batchMonth > 0 && (
-                      <button className="secondary-action" type="button" onClick={() => void openBatchEmail()} disabled={busy === "batch-email"}>
-                        <Mail size={18} />
-                        {busy === "batch-email" && !batchOpen ? "Loading owners..." : "Email all owners"}
-                      </button>
-                    )}
+                    <button className="secondary-action" type="button" onClick={printAllOwners} disabled={!batchMonth} title={batchMonth ? "Print every owner's statement and the summary" : "Choose a month first."}>
+                      <Printer size={18} />
+                      Print all
+                    </button>
+                    <button className="secondary-action" type="button" onClick={() => void openBatchEmail()} disabled={!batchMonth || busy === "batch-email"} title={batchMonth ? "Preview recipients, then lock each statement" : "Choose a month first."}>
+                      <Mail size={18} />
+                      {busy === "batch-email" && batchStep === "loading" ? "Loading owners..." : "Email all owners"}
+                    </button>
                     <button className="secondary-action" onClick={openEmailClient} disabled={busy === "email" || busy === "save-report"}>
                       <Mail size={18} />
                       {emailButtonLabel()}
@@ -2565,39 +2568,64 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
       {batchOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="batch-email-title">
-          <form className="email-modal batch-email-dialog" onSubmit={(event) => { event.preventDefault(); void confirmBatchEmail(); }}>
+          <form
+            className="email-modal batch-email-dialog"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (batchStep === "preview") setBatchStep("confirm");
+              if (batchStep === "confirm") void confirmBatchEmail();
+            }}
+          >
             <button className="modal-close" type="button" onClick={() => setBatchOpen(false)} aria-label="Close email all">
               <X size={22} />
             </button>
             <div>
               <span>All owners</span>
-              <h2 id="batch-email-title">{batchResult.length ? `${batchMonthLabel} is locked` : batchConfirmCopy(batchMonthLabel, batchRecipients).title}</h2>
+              <h2 id="batch-email-title">
+                {batchStep === "loading" && "Loading owners"}
+                {batchStep === "error" && "Owners could not be loaded"}
+                {batchStep === "preview" && (batchRecipients.length ? batchConfirmCopy(batchMonthLabel, batchRecipients).title : "No owners to email")}
+                {batchStep === "confirm" && batchConfirmCopy(batchMonthLabel, batchRecipients).confirmTitle}
+                {batchStep === "result" && `${batchMonthLabel} is locked`}
+              </h2>
             </div>
-            <p>{batchResult.length ? "Open each Gmail draft to send the locked statement. The same link is kept if you send it again." : batchConfirmCopy(batchMonthLabel, batchRecipients).detail}</p>
-            <ul className="batch-recipient-list">
-              {(batchResult.length ? batchRecipients.filter((recipient) => recipient.included) : batchRecipients).map((recipient) => {
-                const result = batchResult.find((item) => item.name === recipient.name && item.email === recipient.email);
-                return (
+            {batchStep === "loading" && <p>Loading owners...</p>}
+            {batchStep === "error" && <p className="field-error">{batchError}</p>}
+            {batchStep === "preview" && <p>{batchRecipients.length ? batchConfirmCopy(batchMonthLabel, batchRecipients).detail : "There are no owners to include."}</p>}
+            {batchStep === "confirm" && <p>{batchConfirmCopy(batchMonthLabel, batchRecipients).confirmDetail}</p>}
+            {batchStep === "result" && <p>Nothing has been sent. Open a Gmail draft, then press Send in Gmail.</p>}
+            {batchStep !== "loading" && batchStep !== "error" && (
+              <ul className="batch-recipient-list">
+                {batchRecipients.map((recipient) => {
+                  const result = batchResult.find((item) => item.email === recipient.email && item.name === recipient.name);
+                  return (
+                    <li key={recipient.ownerId}>
+                      <strong>{recipient.name}</strong>
+                      <span>{recipient.included ? recipient.email : recipient.reason}</span>
+                      {result?.error && <span className="field-error">{result.error}</span>}
+                      {result?.gmailUrl && <a href={result.gmailUrl} target="_blank" rel="noreferrer">Open Gmail draft</a>}
+                    </li>
+                  );
+                })}
+                {batchSkipped.filter((recipient) => !batchRecipients.some((item) => item.ownerId === recipient.ownerId)).map((recipient) => (
                   <li key={recipient.ownerId}>
                     <strong>{recipient.name}</strong>
-                    <span>{recipient.included ? recipient.email : recipient.reason}</span>
-                    {result?.error && <span className="field-error">{result.error}</span>}
-                    {result?.gmailUrl && <a href={result.gmailUrl} target="_blank" rel="noreferrer">Open Gmail draft</a>}
+                    <span>{recipient.reason}</span>
                   </li>
-                );
-              })}
-              {batchResult.length > 0 && batchSkipped.map((recipient) => (
-                <li key={recipient.ownerId}>
-                  <strong>{recipient.name}</strong>
-                  <span>{recipient.reason}</span>
-                </li>
-              ))}
-            </ul>
+                ))}
+              </ul>
+            )}
             <div className="inline-actions">
-              <button className="secondary-action" type="button" onClick={() => setBatchOpen(false)}>{batchResult.length ? "Close" : "Cancel"}</button>
-              {!batchResult.length && (
-                <button className="primary-action" type="submit" disabled={busy === "batch-email" || !batchRecipients.some((recipient) => recipient.included)}>
-                  {busy === "batch-email" ? "Locking..." : `Email owners and lock ${batchMonthLabel}`}
+              <button className="secondary-action" type="button" onClick={() => setBatchOpen(false)}>{batchStep === "result" ? "Close" : "Cancel"}</button>
+              {batchStep === "error" && (
+                <button className="primary-action" type="button" onClick={() => void openBatchEmail()}>Try again</button>
+              )}
+              {batchStep === "preview" && (
+                <button className="primary-action" type="submit" disabled={!batchRecipients.some((recipient) => recipient.included)}>Continue</button>
+              )}
+              {batchStep === "confirm" && (
+                <button className="primary-action" type="submit" disabled={busy === "batch-email"}>
+                  {busy === "batch-email" ? "Locking..." : batchConfirmCopy(batchMonthLabel, batchRecipients).confirmButton}
                 </button>
               )}
             </div>

@@ -35,10 +35,13 @@ export function batchRecipients(owners: BatchOwner[]): BatchRecipient[] {
 
 export function batchConfirmCopy(monthLabel: string, recipients: BatchRecipient[]) {
   const count = recipients.filter((recipient) => recipient.included).length;
-  const owners = count === 1 ? "owner" : "owners";
+  const statements = count === 1 ? "statement" : "statements";
   return {
-    title: `Email ${count} ${owners} and lock ${monthLabel}?`,
-    detail: "Each email locks that owner's statement for this month. You can still modify a locked month later; each change is recorded."
+    title: `${monthLabel} recipients`,
+    detail: "Owners without an email address are skipped.",
+    confirmTitle: `Lock ${count} ${statements} and open Gmail?`,
+    confirmDetail: "Locking cannot be undone. Nothing is sent until you press Send in Gmail.",
+    confirmButton: `Lock ${count} ${statements} and open Gmail`
   };
 }
 
