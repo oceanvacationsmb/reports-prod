@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { calculateReservation } from "@/lib/reporting/formulas";
-import { buildAllOwnersTaxReport, buildOwnerReport } from "@/lib/reporting/reports";
+import { buildAllOwnersTaxReport, buildOwnerReport, buildSummaryReport } from "@/lib/reporting/reports";
 import type { AppSettings, NormalizedReservation, OwnerLike } from "@/lib/types";
 
 const settings: AppSettings = { guestyCacheTtlMinutes: 30, defaultCleaningCaps: [] };
@@ -91,5 +91,29 @@ describe("owner payout tax summary", () => {
     const calculated = calculateReservation(october1463[0], payout, settings);
     assert.ok(Math.abs(calculated.pmc - 2443.64 * 0.12) < 0.001);
     assert.ok(Math.abs(Number(statement.summary.pmc) - (3493.64 * 0.12)) < 0.001);
+  });
+
+  it("uses gross payout minus taxes in the summary Report Taxes block and the all-owners tax report", () => {
+    const properties = [{ name: "GC - 1463", municipality: "SC, GTC" }];
+    const request = { reportKey: "summary" as const, month: 10, year: 2026 };
+    const summary = buildSummaryReport(
+      [payout],
+      new Map([["nicole", october1463]]),
+      new Map([["nicole", []]]),
+      settings,
+      request,
+      properties
+    );
+    const tax = buildAllOwnersTaxReport(
+      [payout],
+      new Map([["nicole", october1463]]),
+      new Map([["nicole", []]]),
+      settings,
+      { reportKey: "allOwnersTax", month: 10, year: 2026 },
+      properties
+    );
+    assert.match(summary.html, /SC, GTC<\/td>\s*<td>\$3,088\.00<\/td>/);
+    assert.match(tax.html, /\$3,088\.00/);
+    assert.equal(summary.html.includes("$2,443.64"), false);
   });
 });
