@@ -1224,11 +1224,6 @@ select:disabled {
   font-weight: 700;
 }
 
-.batch-skipped-group .batch-recipient-list span {
-  color: var(--muted);
-  font-weight: 650;
-}
-
 .statement-edit-modal h2,
 .email-modal h2 {
   margin: 0;
