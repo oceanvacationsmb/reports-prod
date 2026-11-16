@@ -1163,11 +1163,19 @@ select:disabled {
   gap: 8px;
 }
 
+.batch-skipped-group h3,
+.batch-skipped-group strong {
+  color: #4a5c5a;
+}
+
 .batch-skipped-group h3 {
   margin: 8px 0 0;
-  color: var(--muted);
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.batch-skipped-group strong {
+  font-weight: 650;
 }
 
 .statement-edit-modal h2,
@@ -1278,6 +1286,7 @@ select:disabled {
   flex-basis: 100%;
   margin: 0;
   text-align: left;
+  color: #4a5c5a;
 }
 
 .report-document {
