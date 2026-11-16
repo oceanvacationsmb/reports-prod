@@ -129,7 +129,9 @@ function OwnerRows({ rows }: { rows: AdminIncomeOwnerRow[] }) {
       <tbody>
         {rows.map((row) => (
           <tr key={row.ownerId}>
-            <td className="income-name-cell"><strong>{row.owner}</strong></td>
+            <td className="income-name-cell">
+              <strong>{row.owner}</strong>
+            </td>
             <td className="income-owner-type">{row.ownerType}</td>
             <td>{row.properties}</td>
             <FinancialCells row={row} />
