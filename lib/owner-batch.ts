@@ -45,6 +45,14 @@ export function batchConfirmCopy(monthLabel: string, recipients: BatchRecipient[
   };
 }
 
+export function batchResultTitle(monthLabel: string, lockedCount: number, skippedCount: number) {
+  if (skippedCount > 0) {
+    const statements = lockedCount === 1 ? "statement" : "statements";
+    return `${lockedCount} ${monthLabel} ${statements} locked`;
+  }
+  return `${monthLabel} is locked`;
+}
+
 export function nextTransferDate(year: number, month: number) {
   return new Date(year, month, 5).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
@@ -81,7 +89,7 @@ export function ownerBatchPrintDocument(sections: Array<{ title: string; html: s
   const pages = sections
     .map(
       (section) =>
-        `<section class="batch-print-page"><h1 class="batch-print-label">${escapeHtml(section.title)}</h1>${section.html}</section>`
+        `<section class="batch-print-page">${section.html}</section>`
     )
     .join("");
   return `<!doctype html><html><head><meta charset="utf-8"><title>Owner statements</title></head><body>${pages}</body></html>`;
