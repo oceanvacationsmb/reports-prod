@@ -49,12 +49,12 @@ describe("owner batch", () => {
 
   it("prints each statement and the summary as separate pages", () => {
     const html = ownerBatchPrintDocument([
-      { title: "1463 - NICOLE", html: "<article>Nicole statement</article>" },
+      { title: "1463 - CASEY", html: "<article>Casey statement</article>" },
       { title: "Owner summary", html: "<article>Summary</article>" }
     ]);
     assert.equal(html.split("batch-print-page").length - 1, 2);
     assert.equal(html.includes("batch-print-label"), false);
-    assert.ok(html.includes("Nicole statement"));
+    assert.ok(html.includes("Casey statement"));
     assert.ok(html.includes("Summary"));
     assert.equal(batchResultTitle("October", 2, 1), "2 October statements locked");
     assert.equal(batchResultTitle("October", 1, 1), "1 October statement locked");
