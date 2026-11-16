@@ -955,7 +955,7 @@ function final1099Body(finals: FinalMonthInput[], year: number) {
     .map((row) => {
       const label = monthLabels[row.month - 1];
       if (!row.final) {
-        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4">No final statement <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
+        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4">Not final, needs the sent statement <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
       }
       if (!row.depositRecorded) {
         return `<tr><td>${escapeHtml(label)}</td><td colspan="3">Fees saved (${formatMoney(row.expenses)})</td><td>Deposit not recorded</td></tr>`;
@@ -973,7 +973,7 @@ function final1099Body(finals: FinalMonthInput[], year: number) {
   const missing = built.missingMonths.map((month) => monthLabels[month - 1]);
   const incomplete = built.incompleteMonths.map((month) => monthLabels[month - 1]);
   const notes = [
-    missing.length ? `${missing.length} of 12 months have no final statement and aren't in these totals.` : "",
+    missing.length ? `${missing.length} months are not final, needs the sent statement.` : "",
     incomplete.length
       ? `Deposit not recorded: ${incomplete.join(", ")}. The saved fees stay on file, and that month stays out of the 1099 totals until the owner payout from the statement is saved.`
       : "",
@@ -1120,22 +1120,21 @@ export function buildOwnerReport(
   if (request.reportKey === "1099" && Array.isArray(request.lockedMonths)) {
     const year = request.year || new Date().getUTCFullYear();
     const finalReport = final1099Body(request.lockedMonths, year);
+    const included = finalReport.built.months.some((row) => row.final && row.depositRecorded);
+    const headline = {
+      netAccommodation: finalReport.built.totals.netAccommodation,
+      pmc: finalReport.built.totals.pmc,
+      expenses: finalReport.built.totals.expenses,
+      netToOwner: finalReport.built.totals.netToOwner
+    };
     return {
       title: `${name} 1099 Report`,
       periodLabel: period.label,
       summary: {
-        netAccommodation: finalReport.built.totals.netAccommodation,
-        pmc: finalReport.built.totals.pmc,
-        expenses: finalReport.built.totals.expenses,
-        netToOwner: finalReport.built.totals.netToOwner,
+        ...headline,
         missingMonths: finalReport.built.missingMonths.length
       },
-      html: reportShell(`${name} 1099 Report`, period.label, finalReport.html, {
-        netAccommodation: finalReport.built.totals.netAccommodation,
-        pmc: finalReport.built.totals.pmc,
-        expenses: finalReport.built.totals.expenses,
-        netToOwner: finalReport.built.totals.netToOwner
-      })
+      html: reportShell(`${name} 1099 Report`, period.label, finalReport.html, included ? headline : {})
     };
   }
 

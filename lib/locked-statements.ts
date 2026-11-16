@@ -20,6 +20,8 @@ export type StatementTotals = {
   ownerPayout: number;
 };
 
+export type StatementSourceKind = "saved-report" | "uploaded-pdf" | "fixture";
+
 export type FinalStatement = {
   ownerId: string;
   year: number;
@@ -34,6 +36,9 @@ export type FinalStatement = {
   locked: true;
   lockedAt: string;
   lockedBy?: string;
+  backfilled?: boolean;
+  sourceKind?: StatementSourceKind | "";
+  sourceRef?: string;
 };
 
 export type StatementAuditRecord = {
@@ -252,6 +257,8 @@ export type BackfillInput = {
   lockedAt: string;
   lockedBy?: string;
   sourceNote?: string;
+  sourceKind?: StatementSourceKind;
+  sourceRef?: string;
 };
 
 export function backfillLock(input: BackfillInput): FinalStatement {
@@ -280,7 +287,10 @@ export function backfillLock(input: BackfillInput): FinalStatement {
     depositRecorded,
     locked: true,
     lockedAt: input.lockedAt,
-    lockedBy: input.lockedBy || ""
+    lockedBy: input.lockedBy || "",
+    backfilled: true,
+    sourceKind: input.sourceKind || "fixture",
+    sourceRef: input.sourceRef || input.sourceNote || ""
   };
 }
 
@@ -309,6 +319,7 @@ function backfillHtml(input: BackfillInput & { recurring: StatementLine[]; expen
       <h1>${escapeHtml(input.ownerName)} Statement</h1>
       <p>${escapeHtml(monthNames[input.month - 1] || "")} ${input.year}</p>
       <p>${escapeHtml(input.sourceNote || "Saved from a known statement.")}</p>
+      <p>Backfilled from ${escapeHtml(input.sourceKind || "fixture")}${input.sourceRef ? `: ${escapeHtml(input.sourceRef)}` : ""}.</p>
       <table>
         <thead><tr><th>Property</th><th>Description</th><th>Amount</th><th>Note</th></tr></thead>
         <tbody>
@@ -336,5 +347,217 @@ export function planBackfill(existing: { shareId: string } | null, input: Backfi
   return {
     action: "create" as const,
     lock: backfillLock(input)
+  };
+}
+
+export type SavedStatementRecord = {
+  ownerId: string;
+  ownerName: string;
+  shareId: string;
+  periodLabel: string;
+  createdAt: string;
+  htmlSnapshot: string;
+};
+
+export type StatementBackfillPlan =
+  | { action: "skip"; ownerId: string; year: number; month: number; shareId: string; reason: string }
+  | { action: "choose"; ownerId: string; ownerName: string; year: number; month: number; choices: Array<{ shareId: string; createdAt: string; ownerPayout: number; netAccommodation: number }> }
+  | { action: "unreadable"; ownerId: string; ownerName: string; year: number; month: number; reason: string }
+  | { action: "create"; lock: FinalStatement };
+
+const monthIndex = new Map(monthNames.map((name, index) => [name.toLowerCase(), index + 1]));
+
+export function periodFromStatementLabel(label: string) {
+  const match = label.trim().match(/^([A-Za-z]+)\s+1\s+-\s+[A-Za-z]+\s+\d{1,2},\s+(\d{4})$/);
+  if (!match) return null;
+  const month = monthIndex.get(match[1].toLowerCase());
+  const year = Number(match[2]);
+  if (!month || !year) return null;
+  return { month, year };
+}
+
+function labeledAmount(html: string, label: string) {
+  const pattern = new RegExp(`<span>\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*</span>\\s*<strong>\\s*([^<]+?)</strong>`, "i");
+  const match = html.match(pattern);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(amount) ? cents(Math.abs(amount)) : null;
+}
+
+export function totalsFromStatementHtml(html: string): { totals: StatementTotals; depositRecorded: boolean } | null {
+  const netAccommodation = labeledAmount(html, "Total net accommodation");
+  const pmc = labeledAmount(html, "Minus PMC");
+  const expenses = labeledAmount(html, "Minus expenses");
+  const recurringCharges = labeledAmount(html, "Minus recurring charges");
+  const ownerPayout = labeledAmount(html, "Owner payout");
+  if (netAccommodation == null || pmc == null || expenses == null || recurringCharges == null) return null;
+  return {
+    depositRecorded: ownerPayout != null,
+    totals: {
+      netAccommodation,
+      pmc,
+      expenses,
+      recurringCharges,
+      ownerPayout: ownerPayout ?? 0
+    }
+  };
+}
+
+function amountNearLabel(text: string, label: string) {
+  const pattern = new RegExp(`${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^\\d$]{0,40}\\$?\\s*([0-9,]+\\.\\d{2})`, "i");
+  const match = text.match(pattern);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(amount) ? cents(amount) : null;
+}
+
+export function totalsFromStatementText(text: string): { totals: StatementTotals; depositRecorded: boolean } | null {
+  const netAccommodation = amountNearLabel(text, "Total net accommodation");
+  const pmc = amountNearLabel(text, "Minus PMC");
+  const expenses = amountNearLabel(text, "Minus expenses");
+  const recurringCharges = amountNearLabel(text, "Minus recurring charges");
+  const ownerPayout = amountNearLabel(text, "Owner payout");
+  if (netAccommodation == null || pmc == null || expenses == null || recurringCharges == null || ownerPayout == null) return null;
+  return {
+    depositRecorded: true,
+    totals: { netAccommodation, pmc, expenses, recurringCharges, ownerPayout }
+  };
+}
+
+function sameTotals(left: StatementTotals, right: StatementTotals) {
+  return (Object.keys(left) as Array<keyof StatementTotals>).every((key) => Math.abs(left[key] - right[key]) < 0.001);
+}
+
+function lockFromSnapshot(
+  record: SavedStatementRecord,
+  period: { year: number; month: number },
+  parsed: { totals: StatementTotals; depositRecorded: boolean }
+): FinalStatement {
+  return {
+    ownerId: record.ownerId,
+    year: period.year,
+    month: period.month,
+    shareId: record.shareId,
+    periodLabel: record.periodLabel,
+    htmlSnapshot: record.htmlSnapshot,
+    recurring: [],
+    expenses: [],
+    totals: parsed.totals,
+    depositRecorded: parsed.depositRecorded,
+    locked: true,
+    lockedAt: record.createdAt,
+    lockedBy: "",
+    backfilled: true,
+    sourceKind: "saved-report",
+    sourceRef: record.shareId
+  };
+}
+
+export function planSavedStatementBackfill(
+  records: SavedStatementRecord[],
+  existing: Array<{ ownerId: string; year: number; month: number; shareId: string }> = []
+): StatementBackfillPlan[] {
+  const groups = new Map<string, SavedStatementRecord[]>();
+  for (const record of records) {
+    const period = periodFromStatementLabel(record.periodLabel);
+    if (!period) continue;
+    const key = `${record.ownerId}:${period.year}:${period.month}`;
+    groups.set(key, [...(groups.get(key) || []), record]);
+  }
+
+  const plans: StatementBackfillPlan[] = [];
+  for (const [key, group] of groups) {
+    const [ownerId, yearText, monthText] = key.split(":");
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const already = existing.find((item) => item.ownerId === ownerId && item.year === year && item.month === month);
+    if (already) {
+      plans.push({ action: "skip", ownerId, year, month, shareId: already.shareId, reason: "This month is already a final statement." });
+      continue;
+    }
+    const parsed = group.map((record) => ({ record, parsed: totalsFromStatementHtml(record.htmlSnapshot) }));
+    const readable = parsed.filter((item): item is { record: SavedStatementRecord; parsed: NonNullable<typeof item.parsed> } => item.parsed != null);
+    if (!readable.length) {
+      plans.push({
+        action: "unreadable",
+        ownerId,
+        ownerName: group[0]?.ownerName || "",
+        year,
+        month,
+        reason: "The saved statement does not include the sent summary lines."
+      });
+      continue;
+    }
+    const first = readable[0].parsed.totals;
+    const agreed = readable.every((item) => sameTotals(item.parsed.totals, first));
+    if (!agreed) {
+      plans.push({
+        action: "choose",
+        ownerId,
+        ownerName: group[0]?.ownerName || "",
+        year,
+        month,
+        choices: readable
+          .map((item) => ({
+            shareId: item.record.shareId,
+            createdAt: item.record.createdAt,
+            ownerPayout: item.parsed.totals.ownerPayout,
+            netAccommodation: item.parsed.totals.netAccommodation
+          }))
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.shareId.localeCompare(right.shareId))
+      });
+      continue;
+    }
+    const latest = readable
+      .slice()
+      .sort((left, right) => right.record.createdAt.localeCompare(left.record.createdAt) || right.record.shareId.localeCompare(left.record.shareId))[0];
+    plans.push({ action: "create", lock: lockFromSnapshot(latest.record, { year, month }, latest.parsed) });
+  }
+  return plans.sort((left, right) => {
+    const a = left.action === "create" ? left.lock : left;
+    const b = right.action === "create" ? right.lock : right;
+    return a.ownerId.localeCompare(b.ownerId) || a.year - b.year || a.month - b.month;
+  });
+}
+
+export function planUploadedPdfBackfill(input: {
+  ownerId: string;
+  ownerName: string;
+  year: number;
+  month: number;
+  filename: string;
+  text: string;
+  lockedAt?: string;
+  existing?: { shareId: string } | null;
+}): StatementBackfillPlan {
+  if (input.existing?.shareId) {
+    return { action: "skip", ownerId: input.ownerId, year: input.year, month: input.month, shareId: input.existing.shareId, reason: "This month is already a final statement." };
+  }
+  const parsed = totalsFromStatementText(input.text);
+  if (!parsed) {
+    return {
+      action: "unreadable",
+      ownerId: input.ownerId,
+      ownerName: input.ownerName,
+      year: input.year,
+      month: input.month,
+      reason: "The uploaded PDF does not include the sent statement totals."
+    };
+  }
+  return {
+    action: "create",
+    lock: backfillLock({
+      ownerId: input.ownerId,
+      ownerName: input.ownerName,
+      year: input.year,
+      month: input.month,
+      shareId: "dry-run",
+      totals: parsed.totals,
+      recurring: [],
+      lockedAt: input.lockedAt || new Date(0).toISOString(),
+      sourceNote: `Uploaded PDF ${input.filename}`,
+      sourceKind: "uploaded-pdf",
+      sourceRef: input.filename
+    })
   };
 }

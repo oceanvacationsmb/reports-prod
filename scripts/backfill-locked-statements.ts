@@ -32,7 +32,9 @@ const input: BackfillInput = {
   nights: fixture.nights,
   propertyPayoutBeforeRecurring: fixture.propertyPayoutBeforeRecurring,
   lockedAt: new Date().toISOString(),
-  sourceNote: fixture.sourceNote
+  sourceNote: fixture.sourceNote,
+  sourceKind: "fixture",
+  sourceRef: "scripts/fixtures/jeff-827b-august-2026.json"
 };
 
 if (!apply) {
