@@ -117,7 +117,7 @@ describe("income inclusion", () => {
     assert.equal(income.summary.netAccommodation, 10190);
   });
 
-  it("shows one row when two owners have the same listing and does not double the portfolio total", () => {
+  it("shows one row when two owners have the same listing and counts the first row once, including PMC", () => {
     const stay = reservation("NMB - 304B", 0, "2026-11-08", 1);
     stay.manualTotalPayout = 4172.37;
     stay.manualCleaningFare = 500;
@@ -126,24 +126,43 @@ describe("income inclusion", () => {
     stay.cleaningFare = 500;
     const eran: OwnerLike = { _id: "eran", name: "ERAN MARON", type: "payout", percent: 0.12, properties: ["NMB - 304B"] };
     const investments: OwnerLike = { _id: "investments", name: "MARON INVESTMENTS LLC", type: "payout", percent: 0.1, properties: [] };
-    const income = buildAdminIncomeData(
-      [eran, investments],
-      new Map([["eran", [stay]], ["investments", [{ ...stay, id: "same-stay" }]]]),
-      new Map([["eran", []], ["investments", []]]),
-      settings,
-      { year: 2026 }
-    );
+    const reservations = new Map<string, NormalizedReservation[]>([
+      ["eran", [stay]],
+      ["investments", [{ ...stay, id: "same-stay" }]]
+    ]);
+    const expenses = new Map([["eran", []], ["investments", []]]);
+    const income = buildAdminIncomeData([investments, eran], reservations, expenses, settings, { year: 2026 });
+    const again = buildAdminIncomeData([eran, investments], reservations, expenses, settings, { year: 2026 });
+    const pmc = 3059.64 * 0.12;
     const rows = income.properties.filter((row) => row.property.includes("304B"));
     assert.equal(rows.length, 1);
-    assert.deepEqual(rows[0]?.ownerDecision?.owners.map((owner) => owner.owner), ["ERAN MARON", "MARON INVESTMENTS LLC"]);
-    close(rows[0]?.ownerDecision?.owners[0].pmc || 0, 3059.64 * 0.12);
-    close(rows[0]?.ownerDecision?.owners[1].pmc || 0, 3059.64 * 0.1);
+    assert.equal(rows[0]?.owner, "ERAN MARON");
+    assert.equal(again.properties.find((row) => row.property.includes("304B"))?.owner, "ERAN MARON");
+    close(rows[0]?.pmc || 0, pmc);
+    close(rows[0]?.grossPayout || 0, 4172.37);
+    close(rows[0]?.ownerPayout || 0, 3059.64 - pmc);
     close(income.summary.grossPayout, 4172.37);
     close(income.summary.cleaning, 500);
     close(income.summary.netAccommodation, 3059.64);
-    close(income.summary.pmc, 0);
+    close(income.summary.pmc, pmc);
+    close(income.summary.companyIncome, pmc + 500);
+    close(income.summary.ownerPayout, 3059.64 - pmc);
     assert.equal(income.summary.stays, 1);
     assert.equal(income.summary.grossPayout === 4172.37 * 2, false);
+    const keptOwner = income.owners.find((row) => row.owner === "ERAN MARON");
+    const droppedOwner = income.owners.find((row) => row.owner === "MARON INVESTMENTS LLC");
+    close(keptOwner?.pmc || 0, pmc);
+    close(keptOwner?.grossPayout || 0, 4172.37);
+    assert.equal(keptOwner?.properties, 1);
+    close(droppedOwner?.pmc || 0, 0);
+    close(droppedOwner?.grossPayout || 0, 0);
+    close(droppedOwner?.companyIncome || 0, 0);
+    assert.equal(droppedOwner?.stays, 0);
+    assert.equal(droppedOwner?.properties, 0);
+    const november = income.monthly.find((row) => row.month === 11);
+    close(november?.grossPayout || 0, 4172.37);
+    close(november?.pmc || 0, pmc);
+    assert.equal(november?.stays, 1);
   });
 
   it("uses the same full-year Guesty query for a November statement and the income page", () => {

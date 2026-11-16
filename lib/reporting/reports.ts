@@ -42,14 +42,6 @@ export type AdminIncomeOwnerRow = AdminIncomeTotals & {
   owner: string;
   ownerType: OwnerLike["type"];
   properties: number;
-  sharedListings?: string[];
-};
-
-export type ListingOwnerChoice = {
-  ownerId: string;
-  owner: string;
-  pmc: number;
-  ownerPayout: number;
 };
 
 export type AdminIncomePropertyRow = AdminIncomeTotals & {
@@ -58,9 +50,6 @@ export type AdminIncomePropertyRow = AdminIncomeTotals & {
   property: string;
   address: string;
   area: string;
-  ownerDecision?: {
-    owners: ListingOwnerChoice[];
-  };
 };
 
 export type AdminIncomeMonthRow = AdminIncomeTotals & {
@@ -1145,7 +1134,7 @@ function addAdminIncomeTotals(target: AdminIncomeTotals, source: AdminIncomeTota
 }
 
 function subtractAdminIncomeTotals(target: AdminIncomeTotals, source: AdminIncomeTotals) {
-  for (const key of Object.keys(target) as Array<keyof AdminIncomeTotals>) {
+  for (const key of Object.keys(emptyAdminIncomeTotals()) as Array<keyof AdminIncomeTotals>) {
     target[key] -= source[key];
   }
   return target;
@@ -1159,9 +1148,8 @@ function listingHasActivity(row: AdminIncomePropertyRow) {
   return row.stays > 0 || [row.grossPayout, row.cleaning, row.netAccommodation, row.pmc, row.expenses].some((value) => Math.abs(value) >= 0.005);
 }
 
-function sameMoney(rows: AdminIncomePropertyRow[], key: keyof AdminIncomeTotals) {
-  const first = rows[0]?.[key] || 0;
-  return rows.every((row) => Math.abs(row[key] - first) < 0.02);
+function ownerRowOrder(a: AdminIncomePropertyRow, b: AdminIncomePropertyRow) {
+  return a.owner.localeCompare(b.owner) || a.ownerId.localeCompare(b.ownerId) || a.property.localeCompare(b.property);
 }
 
 function collapseSharedListings(rows: AdminIncomePropertyRow[]) {
@@ -1174,73 +1162,24 @@ function collapseSharedListings(rows: AdminIncomePropertyRow[]) {
   }
 
   const collapsed: AdminIncomePropertyRow[] = [];
-  const adjustments: Array<{ remove: AdminIncomePropertyRow[]; add: AdminIncomeTotals }> = [];
-  const sharedByOwner = new Map<string, string[]>();
+  const removed: AdminIncomePropertyRow[] = [];
 
   for (const key of order) {
     const group = groups.get(key) || [];
-    const active = group.filter(listingHasActivity);
+    const active = group.filter(listingHasActivity).sort(ownerRowOrder);
     const activeOwners = new Set(active.map((row) => row.ownerId).filter(Boolean));
     if (activeOwners.size <= 1) {
-      const keeper = active[0] || group[0];
+      const keeper = active[0] || group.slice().sort(ownerRowOrder)[0];
       if (keeper) collapsed.push(keeper);
       continue;
     }
 
-    const sharedValue = (field: keyof AdminIncomeTotals) => (sameMoney(active, field) ? active[0][field] : 0);
-    const pmcDisputed = !sameMoney(active, "pmc");
-    const payoutDisputed = !sameMoney(active, "ownerPayout");
-    const cleaning = sharedValue("cleaning");
-    const websiteVrboFee = sharedValue("websiteVrboFee");
-    const pmc = pmcDisputed ? 0 : sharedValue("pmc");
-    const merged: AdminIncomePropertyRow = {
-      ...active[0],
-      ownerId: "",
-      owner: "Choose an owner",
-      grossPayout: sharedValue("grossPayout"),
-      cleaning,
-      netAccommodation: sharedValue("netAccommodation"),
-      pmc,
-      websiteVrboFee,
-      expenses: sharedValue("expenses"),
-      recurringCharges: sharedValue("recurringCharges"),
-      ownerPayout: payoutDisputed ? 0 : sharedValue("ownerPayout"),
-      bookedNights: sharedValue("bookedNights"),
-      stays: sharedValue("stays"),
-      companyIncome: pmc + cleaning + websiteVrboFee,
-      ownerDecision: {
-        owners: active.map((row) => ({
-          ownerId: row.ownerId,
-          owner: row.owner,
-          pmc: row.pmc,
-          ownerPayout: row.ownerPayout
-        }))
-      }
-    };
-    collapsed.push(merged);
-    adjustments.push({
-      remove: active,
-      add: {
-        companyIncome: merged.companyIncome,
-        grossPayout: merged.grossPayout,
-        cleaning: merged.cleaning,
-        netAccommodation: merged.netAccommodation,
-        pmc: merged.pmc,
-        websiteVrboFee: merged.websiteVrboFee,
-        expenses: merged.expenses,
-        recurringCharges: merged.recurringCharges,
-        ownerPayout: merged.ownerPayout,
-        bookedNights: merged.bookedNights,
-        stays: merged.stays
-      }
-    });
-    for (const row of active) {
-      sharedByOwner.set(row.ownerId, [...(sharedByOwner.get(row.ownerId) || []), row.property]);
-    }
-    void key;
+    const [keeper, ...duplicates] = active;
+    collapsed.push(keeper);
+    removed.push(...duplicates);
   }
 
-  return { rows: collapsed, adjustments, sharedByOwner };
+  return { rows: collapsed, removed };
 }
 
 function propertyArea(property: string) {
@@ -1339,15 +1278,13 @@ function incomeRowsForPeriod(
   }
 
   const collapsed = collapseSharedListings(propertyRows);
-  for (const ownerRow of ownerRows) {
-    const shared = collapsed.sharedByOwner.get(ownerRow.ownerId);
-    if (shared?.length) ownerRow.sharedListings = shared;
+  for (const row of collapsed.removed) {
+    const ownerRow = ownerRows.find((item) => item.ownerId === row.ownerId);
+    if (!ownerRow) continue;
+    subtractAdminIncomeTotals(ownerRow, row);
+    ownerRow.properties = Math.max(0, ownerRow.properties - 1);
   }
   const summary = ownerRows.reduce((sum, row) => addAdminIncomeTotals(sum, row), emptyAdminIncomeTotals());
-  for (const adjustment of collapsed.adjustments) {
-    for (const row of adjustment.remove) subtractAdminIncomeTotals(summary, row);
-    addAdminIncomeTotals(summary, adjustment.add);
-  }
 
   return {
     periodLabel: period.label,

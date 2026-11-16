@@ -44,26 +44,17 @@ function SummaryMetric({ label, value, count = false }: { label: string; value: 
   );
 }
 
-function FinancialCells({ row, decision }: { row: AdminIncomeTotals; decision?: AdminIncomePropertyRow["ownerDecision"] }) {
+function FinancialCells({ row }: { row: AdminIncomeTotals }) {
   return (
     <>
       <td>{formatMoney(row.grossPayout)}</td>
       <td>{formatMoney(row.cleaning)}</td>
       <td>{formatMoney(row.netAccommodation)}</td>
-      <td>
-        {decision ? (
-          <span className="income-owner-decision">
-            {decision.owners.map((owner) => (
-              <span key={owner.ownerId}>{owner.owner}: {formatMoney(owner.pmc)}</span>
-            ))}
-            <span>Not in the total until you choose an owner.</span>
-          </span>
-        ) : formatMoney(row.pmc)}
-      </td>
+      <td>{formatMoney(row.pmc)}</td>
       <td>{formatMoney(row.websiteVrboFee)}</td>
       <td>{formatMoney(row.expenses)}</td>
       <td>{formatMoney(row.recurringCharges)}</td>
-      <td>{decision ? "Choose an owner" : formatMoney(row.ownerPayout)}</td>
+      <td>{formatMoney(row.ownerPayout)}</td>
       <td>{row.bookedNights.toLocaleString("en-US")}</td>
       <td>{row.stays.toLocaleString("en-US")}</td>
     </>
@@ -109,21 +100,13 @@ function PropertyRows({ rows }: { rows: AdminIncomePropertyRow[] }) {
             <th colSpan={12}>{area}</th>
           </tr>
           {areaRows.map((row) => (
-            <tr key={`${row.ownerId || "decision"}:${row.property}`}>
+            <tr key={`${row.ownerId}:${row.property}`}>
               <td className="income-name-cell">
                 <strong>{row.property}</strong>
                 {row.address && <span>{row.address}</span>}
-                {row.ownerDecision && <span>This listing is on more than one owner, so it is shown once.</span>}
               </td>
-              <td>
-                {row.ownerDecision ? (
-                  <span className="income-owner-decision">
-                    <strong>Choose an owner</strong>
-                    <span>{row.ownerDecision.owners.map((owner) => owner.owner).join(" or ")}</span>
-                  </span>
-                ) : row.owner}
-              </td>
-              <FinancialCells row={row} decision={row.ownerDecision} />
+              <td>{row.owner}</td>
+              <FinancialCells row={row} />
             </tr>
           ))}
         </tbody>
@@ -148,7 +131,6 @@ function OwnerRows({ rows }: { rows: AdminIncomeOwnerRow[] }) {
           <tr key={row.ownerId}>
             <td className="income-name-cell">
               <strong>{row.owner}</strong>
-              {row.sharedListings?.length ? <span>Shared listing: {row.sharedListings.join(", ")}. Counted once in the portfolio total.</span> : null}
             </td>
             <td className="income-owner-type">{row.ownerType}</td>
             <td>{row.properties}</td>

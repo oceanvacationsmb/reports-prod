@@ -2282,14 +2282,6 @@ tr:last-child td {
   text-transform: capitalize;
 }
 
-.income-owner-decision {
-  display: grid;
-  gap: 3px;
-  color: #6a4b12;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
 .income-company-value {
   color: var(--jade-dark);
   font-weight: 800;
