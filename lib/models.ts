@@ -261,7 +261,10 @@ const lockedStatementSchema = new Schema(
     depositRecorded: { type: Boolean, default: true },
     locked: { type: Boolean, default: true },
     lockedAt: { type: Date, default: Date.now },
-    lockedBy: { type: String, default: "" }
+    lockedBy: { type: String, default: "" },
+    backfilled: { type: Boolean, default: false },
+    sourceKind: { type: String, default: "" },
+    sourceRef: { type: String, default: "" }
   },
   { versionKey: false }
 );
