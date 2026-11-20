@@ -38,6 +38,7 @@ import { batchConfirmCopy, batchResultTitle, type BatchRecipient } from "@/lib/o
 import { reportPropertyChoices, reportYearChoices, sameProperty } from "@/lib/reporting/report-options";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
 import { pmcFractionFromInput, percentPointsFromInput, storedPmcFraction } from "@/lib/reporting/rates";
+import { storedChargeInvoice } from "@/lib/charge-property";
 import type { ReportKey, SessionUser } from "@/lib/types";
 
 type Owner = {
@@ -354,6 +355,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [statementEdit, setStatementEdit] = useState<StatementEdit | null>(null);
+  const [statementSaving, setStatementSaving] = useState(false);
+  const [statementEditError, setStatementEditError] = useState("");
   const [statementLock, setStatementLock] = useState<StatementLockState | null>(null);
   const [modifyOpen, setModifyOpen] = useState(false);
   const [modifyLines, setModifyLines] = useState<{ label: string; amount: string }[]>([]);
@@ -369,6 +372,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const amountRefs = useRef<Array<HTMLInputElement | null>>([]);
   const reportPreviewRef = useRef<HTMLDivElement | null>(null);
   const propertySettingsRef = useRef<HTMLFormElement | null>(null);
+  const statementEditRef = useRef<HTMLFormElement | null>(null);
+  const statementEditReturn = useRef<HTMLElement | null>(null);
 
   const visibleOwners = useMemo(() => owners.filter((owner) => !isAggregateOwner(owner)), [owners]);
   const reportSupportsFullYear = reportForm.reportKey === "income" || reportForm.reportKey === "gri" || reportForm.reportKey === "1099";
@@ -871,6 +876,52 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     });
   }
 
+  function closeStatementEdit() {
+    setStatementEdit(null);
+    setStatementEditError("");
+    setStatementSaving(false);
+    const back = statementEditReturn.current;
+    statementEditReturn.current = null;
+    requestAnimationFrame(() => back?.focus());
+  }
+
+  function openMonthCharge(opener?: HTMLElement | null) {
+    statementEditReturn.current = opener || null;
+    const values = { property: "", type: "", amount: "" };
+    setStatementEditError("");
+    setStatementEdit({
+      kind: "recurring",
+      id: "monthCharge:new",
+      isOwnerStay: false,
+      isNew: true,
+      fields: [
+        { key: "property", label: "Property", type: "text" },
+        { key: "type", label: "Description", type: "text" },
+        { key: "amount", label: "Amount", type: "number" }
+      ],
+      values,
+      originalValues: { ...values }
+    });
+  }
+
+  function settingsAmountForCharge(id: string) {
+    const match = /^(recurringCharges|monthlyRecurringCharges|specificDateRecurringCharges|dateRangeRecurringCharges):(\d+)/.exec(id);
+    if (!match || !selectedOwner) return null;
+    const list = selectedOwner[match[1] as "recurringCharges"] as Array<{ amount?: number }> | undefined;
+    const charge = list?.[Number(match[2])];
+    if (!charge || charge.amount === undefined || charge.amount === null) return null;
+    const amount = Number(charge.amount);
+    return Number.isFinite(amount) ? amount : null;
+  }
+
+  function monthChargeMessage(action: "updated" | "added" | "removed", label: string, amount: number) {
+    const month = months[Number(reportForm.month) - 1] || "This month";
+    const name = label.trim().toLowerCase() || "charge";
+    if (action === "removed") return `${month} ${name} charge removed. Recurring amount unchanged.`;
+    if (action === "added") return `${month} ${name} charge added at ${money(amount)}. Recurring amount unchanged.`;
+    return `${month} ${name} charge updated to ${money(amount)}. Recurring amount unchanged.`;
+  }
+
   function fieldKey(label: string) {
     const normalized = label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     const map: Record<string, string> = {
@@ -1311,29 +1362,57 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       return { key, label, type: fieldType(key, label) };
     });
     const values = fields.reduce<Record<string, string>>((acc, field, index) => {
+      if (kind === "recurring" && field.key === "property") {
+        acc[field.key] = row?.dataset.chargeProperty || "";
+        return acc;
+      }
+      if (kind === "recurring" && field.key === "amount" && row?.dataset.amount) {
+        acc[field.key] = row.dataset.amount;
+        return acc;
+      }
+      if (kind === "recurring" && field.key === "invoiceUrl") {
+        acc[field.key] = storedChargeInvoice(cells[index]);
+        return acc;
+      }
       acc[field.key] = cells[index] || "";
       return acc;
     }, {});
 
     try {
       if (action === "delete") {
-        if (!window.confirm("Delete this row from MongoDB?")) return;
+        const chargeName = (values.type || "this charge").trim().toLowerCase();
+        const monthName = months[Number(reportForm.month) - 1] || "this month";
+        const message = kind === "recurring"
+          ? `Remove the ${monthName} ${chargeName} charge from this month only? Recurring settings stay the same.`
+          : "Delete this row from MongoDB?";
+        if (!window.confirm(message)) return;
         await api("/api/statement-items", {
           method: "DELETE",
-          body: JSON.stringify({ ownerId, kind, id })
+          body: JSON.stringify({
+            ownerId,
+            kind,
+            id,
+            year: Number(reportForm.year),
+            month: Number(reportForm.month)
+          })
         });
       } else {
         const isOwnerStay = Boolean(button.closest("table")?.querySelector("th:nth-child(4)")?.textContent?.includes("Owner Stay"));
         const normalizedValues = fields.reduce<Record<string, string>>((acc, field) => {
-          acc[field.key] = field.type === "date" ? dateInputValue(values[field.key] || "") : values[field.key] || "";
+          const raw = values[field.key] || "";
+          acc[field.key] = field.type === "date" ? dateInputValue(raw) : field.key === "invoiceUrl" ? storedChargeInvoice(raw) : raw;
           return acc;
         }, {});
+        statementEditReturn.current = button;
+        setStatementEditError("");
         setStatementEdit({ kind, id, isOwnerStay, fields, values: normalizedValues, originalValues: { ...normalizedValues } });
         return;
       }
       await loadData();
       await runReport();
-      flash("Statement row updated.");
+      flash(kind === "recurring"
+        ? monthChargeMessage("removed", values.type || "", moneyToNumber(values.amount || "0"))
+        : "Statement row updated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update statement row.");
     }
@@ -1356,6 +1435,28 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     node.addEventListener("click", listener, true);
     return () => node.removeEventListener("click", listener, true);
   });
+
+  useEffect(() => {
+    if (!statementEdit) return;
+    const frame = requestAnimationFrame(() => {
+      statementEditRef.current?.querySelector<HTMLElement>("select, input")?.focus();
+    });
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setStatementEdit(null);
+      setStatementEditError("");
+      setStatementSaving(false);
+      const back = statementEditReturn.current;
+      statementEditReturn.current = null;
+      requestAnimationFrame(() => back?.focus());
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [statementEdit?.id, statementEdit?.isNew]);
 
   async function saveStatementEdit(event: React.FormEvent) {
     event.preventDefault();
@@ -1380,26 +1481,47 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     } else {
       if (values.amount !== undefined) values.amount = moneyToNumber(String(values.amount || "0"));
       if (statementEdit.kind === "recurring") {
-        delete values.property;
+        values.property = statementEdit.values.property || "";
+        values.invoiceUrl = storedChargeInvoice(values.invoiceUrl);
         delete values.vendor;
-        delete values.invoiceUrl;
       }
     }
 
+    const chargeLabel = String(statementEdit.values.type || "");
+    const chargeAmount = statementEdit.kind === "recurring" ? moneyToNumber(String(values.amount || "0")) : 0;
+    const chargeAction = statementEdit.isNew ? "added" : "updated";
+    setStatementSaving(true);
+    setStatementEditError("");
     try {
       const itemId = statementEdit.isNew && typeof values.reservationCode === "string"
         ? values.reservationCode.trim()
         : statementEdit.id;
       await api("/api/statement-items", {
         method: statementEdit.isNew ? "POST" : "PATCH",
-        body: JSON.stringify({ ownerId, kind: statementEdit.kind, id: itemId, values })
+        body: JSON.stringify({
+          ownerId,
+          kind: statementEdit.kind,
+          id: itemId,
+          values,
+          year: Number(reportForm.year),
+          month: Number(reportForm.month)
+        })
       });
-      setStatementEdit(null);
+      closeStatementEdit();
       await loadData();
       await runReport();
-      flash("Statement row updated.");
+      flash(statementEdit.kind === "recurring"
+        ? monthChargeMessage(chargeAction, chargeLabel, chargeAmount)
+        : "Statement row updated.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update statement row.");
+      const monthName = months[Number(reportForm.month) - 1] || "this month";
+      const message = statementEdit.kind === "recurring"
+        ? `Couldn't save the ${monthName} charge. Your changes are still here. Try Save again.`
+        : err instanceof Error ? err.message : "Unable to update statement row.";
+      setStatementEditError(message);
+      setError(message);
+    } finally {
+      setStatementSaving(false);
     }
   }
 
@@ -2005,14 +2127,19 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   </section>
                 )}
                 {statementMatches() && statementLock && !statementLock.locked && isAdmin && (
-                  statementLock.previouslySent ? (
-                    <div className="message statement-lock">
-                      <div className="status-pill draft">Unlocked. Edit this month, then approve it to lock a new snapshot.</div>
-                      {statementLock.sentShareId && <a href={`/share/${statementLock.sentShareId}`} target="_blank" rel="noreferrer">Sent version</a>}
-                    </div>
-                  ) : (
-                    <div className="status-pill draft">Draft, not sent</div>
-                  )
+                  <div className="message statement-lock">
+                    {statementLock.previouslySent ? (
+                      <>
+                        <div className="status-pill draft">Unlocked. Edit this month, then approve it to lock a new snapshot.</div>
+                        {statementLock.sentShareId && <a href={`/share/${statementLock.sentShareId}`} target="_blank" rel="noreferrer">Sent version</a>}
+                      </>
+                    ) : (
+                      <div className="status-pill draft">Draft, not sent</div>
+                    )}
+                    <button className="secondary-action small" type="button" onClick={(event) => openMonthCharge(event.currentTarget)}>
+                      Add charge for this month
+                    </button>
+                  </div>
                 )}
                 {modifyOpen && statementLock?.locked && (
                   <form className="editor-panel statement-modify" onSubmit={saveModification}>
@@ -2780,18 +2907,63 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       </section>
 
       {statementEdit && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <form className="statement-edit-modal" onSubmit={saveStatementEdit}>
-            <button className="modal-close" type="button" onClick={() => setStatementEdit(null)} aria-label="Close editor">
+        <div className="modal-backdrop">
+          <form
+            ref={statementEditRef}
+            className="statement-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="statement-edit-title"
+            onSubmit={saveStatementEdit}
+          >
+            <button className="modal-close" type="button" onClick={closeStatementEdit} aria-label="Close editor">
               <X size={22} />
             </button>
-            <h2>{statementEdit.isNew ? "Add missing reservation" : "Edit statement row"}</h2>
+            <h2 id="statement-edit-title">
+              {statementEdit.kind === "recurring"
+                ? statementEdit.isNew
+                  ? "Add charge for this month"
+                  : "Edit this month's charge"
+                : statementEdit.isNew
+                  ? "Add missing reservation"
+                  : "Edit statement row"}
+            </h2>
+            {statementEdit.kind === "recurring" && (
+              <p className="muted-copy">
+                {statementEdit.isNew
+                  ? `Adds a one-time charge to ${months[Number(reportForm.month) - 1] || "this month"}'s statement. Recurring settings stay the same.`
+                  : `This change applies to ${months[Number(reportForm.month) - 1] || "this month"} only. Recurring settings stay the same.`}
+              </p>
+            )}
             <div className="modal-field-grid">
-              {statementEdit.fields.map((field) => (
-                <label key={field.key}>
+              {statementEdit.fields.map((field) => {
+                const fieldId = `statement-edit-${field.key}`;
+                const propertyValue = statementEdit.values.property || "";
+                const propertyOptions = selectedOwner?.properties || [];
+                const knownProperty = !propertyValue || propertyOptions.includes(propertyValue);
+                return (
+                <label key={field.key} htmlFor={fieldId}>
                   {field.label}
-                  {field.key === "property" && selectedOwner?.properties?.length ? (
+                  {field.key === "property" && statementEdit.kind === "recurring" ? (
                     <select
+                      id={fieldId}
+                      value={propertyValue}
+                      onChange={(event) => {
+                        setStatementEdit({
+                          ...statementEdit,
+                          values: { ...statementEdit.values, property: event.target.value }
+                        });
+                      }}
+                    >
+                      <option value="">No property</option>
+                      {propertyOptions.map((property) => (
+                        <option key={property} value={property}>{property}</option>
+                      ))}
+                      {!knownProperty && <option value={propertyValue}>{propertyValue}</option>}
+                    </select>
+                  ) : field.key === "property" && selectedOwner?.properties?.length ? (
+                    <select
+                      id={fieldId}
                       value={statementEdit.values[field.key] || ""}
                       required={Boolean(statementEdit.isNew)}
                       onChange={(event) => {
@@ -2807,11 +2979,15 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </select>
                   ) : (
                     <input
+                      id={fieldId}
+                      className={field.key === "invoiceUrl" ? "optional-field" : undefined}
                       type={field.type === "date" ? "date" : "text"}
-                      value={statementEdit.values[field.key] || ""}
+                      value={field.key === "invoiceUrl" ? storedChargeInvoice(statementEdit.values[field.key]) : statementEdit.values[field.key] || ""}
+                      placeholder={field.key === "invoiceUrl" ? "Optional" : undefined}
                       inputMode={field.type === "number" ? "decimal" : undefined}
                       required={Boolean(
                         statementEdit.isNew &&
+                        statementEdit.kind !== "recurring" &&
                         ["property", "reservationCode", "guestName", "checkIn", "checkOut", "netAcc"].includes(field.key)
                       )}
                       onChange={(event) => {
@@ -2822,16 +2998,36 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                         values: field.key === "netAcc" ? calculatedReservationValues(moneyToNumber(value), values) : values
                       });
                       }}
+                      onBlur={(event) => {
+                        if (field.key !== "amount" || statementEdit.kind !== "recurring") return;
+                        const raw = event.target.value.trim();
+                        if (!raw) return;
+                        const formatted = money(moneyToNumber(raw));
+                        setStatementEdit((current) => current ? { ...current, values: { ...current.values, amount: formatted } } : current);
+                      }}
                     />
                   )}
+                  {field.key === "amount" && statementEdit.kind === "recurring" && !statementEdit.isNew && settingsAmountForCharge(statementEdit.id) != null && (
+                    <span className="field-hint">
+                      Recurring amount: {money(settingsAmountForCharge(statementEdit.id) || 0)}
+                    </span>
+                  )}
                 </label>
-              ))}
+                );
+              })}
             </div>
+            {statementEditError && <p className="error-line" role="alert">{statementEditError}</p>}
             <div className="button-row">
-              <button type="button" className="secondary-action" onClick={() => setStatementEdit(null)}>
+              <button type="button" className="secondary-action" onClick={closeStatementEdit} disabled={statementSaving}>
                 Cancel
               </button>
-              <button className="primary-action">{statementEdit.isNew ? "Add reservation" : "Save"}</button>
+              <button className="primary-action" disabled={statementSaving} aria-busy={statementSaving}>
+                {statementSaving
+                  ? "Saving..."
+                  : statementEdit.kind === "recurring"
+                    ? statementEdit.isNew ? "Add charge" : "Save"
+                    : statementEdit.isNew ? "Add reservation" : "Save"}
+              </button>
             </div>
           </form>
         </div>

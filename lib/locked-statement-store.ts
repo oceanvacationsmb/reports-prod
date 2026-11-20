@@ -5,6 +5,7 @@ import { getGuestyReservations } from "@/lib/guesty";
 import { getSettings } from "@/lib/settings";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
 import { buildOwnerReport, makeShareId, recurringExpenses } from "@/lib/reporting/reports";
+import { keepMonthChargesFromStatement, monthChargesForStatement, saveMonthCharges } from "@/lib/statement-month-charges";
 import {
   cents,
   lockOnEmail,
@@ -55,6 +56,7 @@ function totalsFromSummary(summary: Record<string, number | string>): StatementT
 function linesFromDoc(value: unknown): StatementLine[] {
   if (!Array.isArray(value)) return [];
   return value.map((line) => ({
+    ...(line?.id ? { id: String(line.id) } : {}),
     label: String(line?.label || ""),
     amount: numberValue(line?.amount),
     property: String(line?.property || "")
@@ -212,6 +214,8 @@ async function computeStatement(ownerId: string, year: number, month: number, re
       : Promise.resolve([])
   ]);
   const expenseList = asPlain(expenses) as ExpenseLike[];
+  const storedLines = recurringOverride ? null : await monthChargesForStatement(ownerId, year, month);
+  const monthLines = recurringOverride || storedLines || undefined;
   const report = buildOwnerReport(
     owner,
     rows,
@@ -225,13 +229,19 @@ async function computeStatement(ownerId: string, year: number, month: number, re
       calculationSource: "reports",
       readOnly: true,
       hideZeroReservations: true,
-      ...(recurringOverride ? { recurringOverride } : {})
+      ...(monthLines ? { recurringOverride: monthLines } : {})
     },
     asPlain(properties) as PropertyLike[]
   );
-  const recurring = recurringOverride
-    ? recurringOverride.map((line) => ({ label: line.label, amount: cents(line.amount), property: line.property || "Recurring" }))
+  const recurring = monthLines
+    ? monthLines.map((line, index) => ({
+        id: line.id || `monthCharge:${year}-${month}-${index}`,
+        label: line.label,
+        amount: cents(line.amount),
+        property: line.property || "Recurring"
+      }))
     : recurringExpenses(owner, period.startDate, period.endDate).map((expense) => ({
+        id: String(expense._id || ""),
         label: expense.type,
         amount: numberValue(expense.amount),
         property: expense.property || "Recurring"
@@ -364,6 +374,7 @@ export async function unlockFinalStatement(input: { ownerId: string; year: numbe
     { $set: { locked: false, unlockedAt: new Date(when), unlockedBy: input.who } }
   );
   await StatementAudit.create({ ...decision.audit, when: new Date(when) });
+  await keepMonthChargesFromStatement(input.ownerId, input.year, input.month, existing.recurring);
   return {
     locked: false,
     previouslySent: true,
@@ -531,6 +542,18 @@ export async function modifyFinalStatement(input: {
     ...result.audit,
     when: new Date(result.audit.when)
   });
+  await saveMonthCharges(
+    input.ownerId,
+    input.year,
+    input.month,
+    result.lock.recurring.map((line, index) => ({
+      id: line.id || `monthCharge:${input.year}-${input.month}-${index}`,
+      label: line.label,
+      amount: line.amount,
+      property: line.property || "",
+      invoice: line.invoice || ""
+    }))
+  );
   const history = await loadHistory(input.ownerId, input.year, input.month);
   return {
     created: false,

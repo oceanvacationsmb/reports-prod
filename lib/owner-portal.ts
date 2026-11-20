@@ -6,6 +6,7 @@ import { Expense, Owner, Property, ReservationSeen } from "@/lib/models";
 import { findFinalStatement } from "@/lib/locked-statement-store";
 import { calculateReservation } from "@/lib/reporting/formulas";
 import { buildOwnerReport } from "@/lib/reporting/reports";
+import { loadStatementChargesByMonth, monthChargesForStatement } from "@/lib/statement-month-charges";
 import { getSettings } from "@/lib/settings";
 import type { CalculatedReservation, ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike } from "@/lib/types";
 
@@ -141,6 +142,9 @@ export async function loadOwnerPortal(ownerId: string, year: number, month?: num
   const propertyList = asPlain(properties) as PropertyLike[];
   const expenseList = asPlain(expenses) as ExpenseLike[];
   const rows = await addFirstSeenStatus(ownerId, year, fetchedRows);
+  const finalStatement = month ? await findFinalStatement(ownerId, year, month) : null;
+  const monthCharges = month && !finalStatement ? await monthChargesForStatement(ownerId, year, month) : null;
+  const yearCharges = month ? null : await loadStatementChargesByMonth(ownerId, year);
   const report = buildOwnerReport(
     owner,
     rows,
@@ -152,17 +156,16 @@ export async function loadOwnerPortal(ownerId: string, year: number, month?: num
       month: month || undefined,
       calculationSource: "reports",
       readOnly: true,
-      hideZeroReservations: true
+      hideZeroReservations: true,
+      ...(monthCharges ? { recurringOverride: monthCharges } : {}),
+      ...(yearCharges && Object.keys(yearCharges).length ? { monthChargeOverrides: yearCharges } : {})
     },
     propertyList
   );
 
-  if (month) {
-    const finalStatement = await findFinalStatement(ownerId, year, month);
-    if (finalStatement?.htmlSnapshot) {
-      report.html = finalStatement.htmlSnapshot;
-      if (finalStatement.periodLabel) report.periodLabel = finalStatement.periodLabel;
-    }
+  if (finalStatement?.htmlSnapshot) {
+    report.html = finalStatement.htmlSnapshot;
+    if (finalStatement.periodLabel) report.periodLabel = finalStatement.periodLabel;
   }
 
   const calendarRows = rows

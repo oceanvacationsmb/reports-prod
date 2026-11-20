@@ -64,6 +64,7 @@ export type ExpenseLike = {
   amount: number;
   notes?: string;
   invoiceUrl?: string;
+  monthOnlyLabel?: string;
   month: number;
   year: number;
   createdAt?: string | Date;

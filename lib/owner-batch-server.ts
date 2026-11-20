@@ -6,6 +6,7 @@ import { findFinalStatement, reportFromFinal } from "@/lib/locked-statement-stor
 import { getSettings } from "@/lib/settings";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
 import { buildOwnerReport, buildSummaryReport } from "@/lib/reporting/reports";
+import { monthChargesForStatement } from "@/lib/statement-month-charges";
 import type { ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike } from "@/lib/types";
 import { batchRecipients, isBatchOwner, ownerBatchPrintDocument } from "@/lib/owner-batch";
 
@@ -51,6 +52,7 @@ export async function buildOwnerBatchPrint(month: number, year: number) {
   for (const owner of owners) {
     const ownerId = String(owner._id || owner.id || "");
     const finalStatement = await findFinalStatement(ownerId, year, month);
+    const monthCharges = finalStatement ? null : await monthChargesForStatement(ownerId, year, month);
     const report = finalStatement
       ? reportFromFinal(finalStatement, owner.name)
       : buildOwnerReport(
@@ -58,7 +60,15 @@ export async function buildOwnerBatchPrint(month: number, year: number) {
           reservationsByOwner.get(ownerId) || [],
           expensesByOwner.get(ownerId) || [],
           settings,
-          { reportKey: "statement", ownerId, month, year, readOnly: true, hideZeroReservations: true },
+          {
+            reportKey: "statement",
+            ownerId,
+            month,
+            year,
+            readOnly: true,
+            hideZeroReservations: true,
+            ...(monthCharges ? { recurringOverride: monthCharges } : {})
+          },
           properties
         );
     sections.push({ title: owner.name, html: report.html });

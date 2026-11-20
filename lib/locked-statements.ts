@@ -1,7 +1,9 @@
 export type StatementLine = {
+  id?: string;
   label: string;
   amount: number;
   property?: string;
+  invoice?: string;
 };
 
 export type StatementExpenseLine = {
@@ -108,6 +110,7 @@ export function cents(value: number) {
 
 function copyLine(line: StatementLine): StatementLine {
   return {
+    ...(line.id ? { id: line.id } : {}),
     label: line.label,
     amount: cents(line.amount),
     property: line.property || ""
