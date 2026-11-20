@@ -3,6 +3,7 @@ import { z } from "zod";
 import { assertAdmin } from "@/lib/auth";
 import { connectDb } from "@/lib/db";
 import { Expense, GuestyCache, ReservationOverride } from "@/lib/models";
+import { storedChargeInvoice } from "@/lib/charge-property";
 import { editMonthCharge } from "@/lib/statement-month-charges";
 import { fail, ok } from "@/lib/http";
 
@@ -117,6 +118,7 @@ async function updateRecurring(
     label: values.type !== undefined ? String(values.type) : undefined,
     amount: values.amount !== undefined ? numberValue(values.amount) : undefined,
     property: values.property !== undefined ? String(values.property) : undefined,
+    invoice: values.invoiceUrl !== undefined ? storedChargeInvoice(values.invoiceUrl) : undefined,
     add: options.add,
     remove: removing
   });

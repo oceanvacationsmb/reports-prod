@@ -3,6 +3,7 @@ export type StatementLine = {
   label: string;
   amount: number;
   property?: string;
+  invoice?: string;
 };
 
 export type StatementExpenseLine = {

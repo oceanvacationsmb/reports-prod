@@ -11,3 +11,11 @@ export function storedChargeProperty(value: unknown) {
 export function chargePropertyLabel(value: unknown) {
   return storedChargeProperty(value) || NO_PROPERTY_LABEL;
 }
+
+const invoicePlaceholders = new Set(["", "no invoice", "optional"]);
+
+export function storedChargeInvoice(value: unknown) {
+  const text = String(value || "").trim();
+  if (invoicePlaceholders.has(text.toLowerCase())) return "";
+  return text;
+}

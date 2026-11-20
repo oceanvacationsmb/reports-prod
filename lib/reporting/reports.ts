@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { chargePropertyLabel, storedChargeProperty } from "@/lib/charge-property";
+import { chargePropertyLabel, storedChargeInvoice, storedChargeProperty } from "@/lib/charge-property";
 import type { AppSettings, CalculatedReservation, ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike, ReportKey } from "@/lib/types";
 import { calculateReservation, pmcPercent } from "@/lib/reporting/formulas";
 import { sameProperty } from "@/lib/reporting/report-options";
@@ -19,8 +19,8 @@ export type ReportRequest = {
   calculationSource?: "reports" | "portal";
   readOnly?: boolean;
   hideZeroReservations?: boolean;
-  recurringOverride?: { id?: string; label: string; amount: number; property?: string }[];
-  monthChargeOverrides?: Record<number, { id?: string; label: string; amount: number; property?: string }[]>;
+  recurringOverride?: { id?: string; label: string; amount: number; property?: string; invoice?: string }[];
+  monthChargeOverrides?: Record<number, { id?: string; label: string; amount: number; property?: string; invoice?: string }[]>;
   lockedMonths?: FinalMonthInput[];
   tenNinetyNineBasis?: TenNinetyNineBasis;
 };
@@ -879,7 +879,7 @@ function expensesTable(
         <td>${escapeHtml(expense.notes || "")}</td>
         <td>${escapeHtml(expense.vendor || "")}</td>
         <td>${formatMoney(Number(expense.amount || 0))}${monthTag}</td>
-        <td>${invoiceUrl ? `<a href="${escapeHtml(invoiceUrl)}" target="_blank" rel="noreferrer">Invoice</a>` : kind === "recurring" ? "No invoice" : ""}</td>
+        <td>${invoiceUrl ? `<a href="${escapeHtml(invoiceUrl)}" target="_blank" rel="noreferrer">Invoice</a>` : ""}</td>
         ${editActions(kind, expense._id, { readOnly: options.readOnly })}
       </tr>`
     })
@@ -978,7 +978,7 @@ function chargesForYear(
   startDate: string,
   endDate: string,
   year: number,
-  overrides: Record<number, { id?: string; label: string; amount: number; property?: string }[]>
+  overrides: Record<number, { id?: string; label: string; amount: number; property?: string; invoice?: string }[]>
 ) {
   const start = parseDate(startDate);
   const end = parseDate(endDate);
@@ -1006,6 +1006,7 @@ function chargesForYear(
           year: periodYear,
           vendor: "Recurring",
           notes: "Charge for this month",
+          invoiceUrl: storedChargeInvoice(charge.invoice),
           monthOnlyLabel: monthLabels[month - 1] || "This month"
         });
       });
@@ -1020,7 +1021,7 @@ function chargesForYear(
 function overrideRecurring(
   owner: OwnerLike,
   request: ReportRequest,
-  lines: { id?: string; label: string; amount: number; property?: string }[]
+  lines: { id?: string; label: string; amount: number; property?: string; invoice?: string }[]
 ) {
   const year = request.year || new Date().getUTCFullYear();
   const month = request.month || 1;
@@ -1034,6 +1035,7 @@ function overrideRecurring(
     year,
     vendor: "Recurring",
     notes: "Charge for this month",
+    invoiceUrl: storedChargeInvoice(charge.invoice),
     monthOnlyLabel: monthLabels[month - 1] || "This month"
   }));
 }

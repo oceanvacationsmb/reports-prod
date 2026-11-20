@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { linesForMonth } from "@/lib/locked-statements";
 import { buildOwnerReport } from "@/lib/reporting/reports";
-import { applyMonthChargeChange, settingsChargesForMonth, storedChargeProperty } from "@/lib/statement-month-charges";
+import { applyMonthChargeChange, settingsChargesForMonth, storedChargeInvoice, storedChargeProperty } from "@/lib/statement-month-charges";
 import type { AppSettings, OwnerLike } from "@/lib/types";
 
 const settings: AppSettings = { guestyCacheTtlMinutes: 30, defaultCleaningCaps: [] };
@@ -131,6 +131,34 @@ describe("statement month charges", () => {
     const assigned = statement(owner, 11, [{ id: november[0].id, label: "Pool care", amount: 40, property: "Harbor North" }]);
     assert.match(assigned.html, />Harbor North<\/td>\s*<td>Pool care<\/td>/);
     assert.match(assigned.html, /data-charge-property="Harbor North"/);
+    assert.doesNotMatch(plain.html, /No invoice/);
+    assert.doesNotMatch(plain.html, />Optional</);
+  });
+
+  it("never saves an invoice placeholder", () => {
+    const owner = sampleOwner();
+    const november = settingsChargesForMonth(owner, 2026, 11);
+    assert.equal(november[0].invoice, "");
+    assert.equal(storedChargeInvoice("No invoice"), "");
+    assert.equal(storedChargeInvoice("Optional"), "");
+    assert.equal(storedChargeInvoice("  no invoice  "), "");
+    const cleared = applyMonthChargeChange(
+      [{ ...november[0], invoice: "No invoice" }],
+      { id: november[0].id, label: "Pool care", amount: 100, invoice: "Optional" }
+    );
+    assert.equal(cleared[0].invoice, "");
+    const kept = applyMonthChargeChange(
+      [{ ...november[0], invoice: "No invoice" }],
+      { id: november[0].id, label: "Pool care", amount: 40 }
+    );
+    assert.equal(kept[0].invoice, "");
+    const real = applyMonthChargeChange(november, {
+      id: november[0].id,
+      label: "Pool care",
+      amount: 40,
+      invoice: "https://example.com/invoice"
+    });
+    assert.equal(real[0].invoice, "https://example.com/invoice");
   });
 
   it("does not write statement edits back to the owner record", () => {

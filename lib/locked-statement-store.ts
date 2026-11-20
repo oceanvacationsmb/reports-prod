@@ -550,7 +550,8 @@ export async function modifyFinalStatement(input: {
       id: line.id || `monthCharge:${input.year}-${input.month}-${index}`,
       label: line.label,
       amount: line.amount,
-      property: line.property || ""
+      property: line.property || "",
+      invoice: line.invoice || ""
     }))
   );
   const history = await loadHistory(input.ownerId, input.year, input.month);

@@ -1,16 +1,17 @@
 import { LockedStatement, Owner, StatementMonthOverride } from "@/lib/models";
-import { storedChargeProperty } from "@/lib/charge-property";
+import { storedChargeInvoice, storedChargeProperty } from "@/lib/charge-property";
 import { recurringExpenses } from "@/lib/reporting/reports";
 import type { StatementLine } from "@/lib/locked-statements";
 import type { OwnerLike } from "@/lib/types";
 
-export { NO_PROPERTY_LABEL, chargePropertyLabel, storedChargeProperty } from "@/lib/charge-property";
+export { NO_PROPERTY_LABEL, chargePropertyLabel, storedChargeInvoice, storedChargeProperty } from "@/lib/charge-property";
 
 export type MonthCharge = {
   id: string;
   label: string;
   amount: number;
   property: string;
+  invoice: string;
 };
 
 function monthBounds(year: number, month: number) {
@@ -32,15 +33,16 @@ export function settingsChargesForMonth(owner: OwnerLike, year: number, month: n
     id: String(expense._id || ""),
     label: expense.type || "Recurring",
     amount: Number(expense.amount) || 0,
-    property: storedChargeProperty(expense.property)
+    property: storedChargeProperty(expense.property),
+    invoice: storedChargeInvoice(expense.invoiceUrl)
   }));
 }
 
 export function applyMonthChargeChange(
   lines: MonthCharge[],
-  action: { id?: string; label?: string; amount?: number; property?: string; add?: boolean; remove?: boolean }
+  action: { id?: string; label?: string; amount?: number; property?: string; invoice?: string; add?: boolean; remove?: boolean }
 ): MonthCharge[] {
-  const next = lines.map((line) => ({ ...line }));
+  const next = lines.map((line) => ({ ...line, invoice: storedChargeInvoice(line.invoice) }));
   if (action.add) {
     const label = String(action.label || "").trim();
     if (!label) throw chargeError("Enter a description for this month's charge.", 400);
@@ -48,7 +50,8 @@ export function applyMonthChargeChange(
       id: `monthCharge:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       label,
       amount: Number(action.amount) || 0,
-      property: storedChargeProperty(action.property)
+      property: storedChargeProperty(action.property),
+      invoice: storedChargeInvoice(action.invoice)
     });
     return next;
   }
@@ -63,7 +66,8 @@ export function applyMonthChargeChange(
     ...next[index],
     label: String(action.label).trim(),
     amount: Number(action.amount) || 0,
-    property: action.property === undefined ? next[index].property : storedChargeProperty(action.property)
+    property: action.property === undefined ? next[index].property : storedChargeProperty(action.property),
+    invoice: action.invoice === undefined ? next[index].invoice : storedChargeInvoice(action.invoice)
   };
   return next;
 }
@@ -73,7 +77,8 @@ function asMonthCharges(lines: StatementLine[], year: number, month: number): Mo
     id: line.id || `monthCharge:${year}-${month}-${index}`,
     label: line.label,
     amount: Number(line.amount) || 0,
-    property: storedChargeProperty(line.property)
+    property: storedChargeProperty(line.property),
+    invoice: storedChargeInvoice(line.invoice)
   }));
 }
 
@@ -82,7 +87,8 @@ export function chargesAsLines(lines: MonthCharge[]): StatementLine[] {
     id: line.id,
     label: line.label,
     amount: line.amount,
-    property: line.property
+    property: line.property,
+    ...(line.invoice ? { invoice: line.invoice } : {})
   }));
 }
 
@@ -132,7 +138,8 @@ export async function saveMonthCharges(ownerId: string, year: number, month: num
           id: line.id,
           label: line.label,
           amount: line.amount,
-          property: storedChargeProperty(line.property)
+          property: storedChargeProperty(line.property),
+          invoice: storedChargeInvoice(line.invoice)
         }))
       }
     },
@@ -166,6 +173,7 @@ export async function editMonthCharge(input: {
   label?: string;
   amount?: number;
   property?: string;
+  invoice?: string;
   add?: boolean;
   remove?: boolean;
 }) {
@@ -189,7 +197,8 @@ export async function editMonthCharge(input: {
     : settingsChargesForMonth(owner as OwnerLike, input.year, input.month);
   const next = applyMonthChargeChange(current, {
     ...input,
-    property: input.property === undefined ? undefined : storedChargeProperty(input.property)
+    property: input.property === undefined ? undefined : storedChargeProperty(input.property),
+    invoice: input.invoice === undefined ? undefined : storedChargeInvoice(input.invoice)
   });
   await saveMonthCharges(input.ownerId, input.year, input.month, next);
   return next;

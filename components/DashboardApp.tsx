@@ -38,6 +38,7 @@ import { batchConfirmCopy, batchResultTitle, type BatchRecipient } from "@/lib/o
 import { reportPropertyChoices, reportYearChoices, sameProperty } from "@/lib/reporting/report-options";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
 import { pmcFractionFromInput, percentPointsFromInput, storedPmcFraction } from "@/lib/reporting/rates";
+import { storedChargeInvoice } from "@/lib/charge-property";
 import type { ReportKey, SessionUser } from "@/lib/types";
 
 type Owner = {
@@ -1369,6 +1370,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         acc[field.key] = row.dataset.amount;
         return acc;
       }
+      if (kind === "recurring" && field.key === "invoiceUrl") {
+        acc[field.key] = storedChargeInvoice(cells[index]);
+        return acc;
+      }
       acc[field.key] = cells[index] || "";
       return acc;
     }, {});
@@ -1394,7 +1399,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       } else {
         const isOwnerStay = Boolean(button.closest("table")?.querySelector("th:nth-child(4)")?.textContent?.includes("Owner Stay"));
         const normalizedValues = fields.reduce<Record<string, string>>((acc, field) => {
-          acc[field.key] = field.type === "date" ? dateInputValue(values[field.key] || "") : values[field.key] || "";
+          const raw = values[field.key] || "";
+          acc[field.key] = field.type === "date" ? dateInputValue(raw) : field.key === "invoiceUrl" ? storedChargeInvoice(raw) : raw;
           return acc;
         }, {});
         statementEditReturn.current = button;
@@ -1476,8 +1482,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       if (values.amount !== undefined) values.amount = moneyToNumber(String(values.amount || "0"));
       if (statementEdit.kind === "recurring") {
         values.property = statementEdit.values.property || "";
+        values.invoiceUrl = storedChargeInvoice(values.invoiceUrl);
         delete values.vendor;
-        delete values.invoiceUrl;
       }
     }
 
@@ -1508,7 +1514,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         ? monthChargeMessage(chargeAction, chargeLabel, chargeAmount)
         : "Statement row updated.");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to update statement row.";
+      const monthName = months[Number(reportForm.month) - 1] || "this month";
+      const message = statementEdit.kind === "recurring"
+        ? `Couldn't save the ${monthName} charge. Your changes are still here. Try Save again.`
+        : err instanceof Error ? err.message : "Unable to update statement row.";
       setStatementEditError(message);
       setError(message);
     } finally {
@@ -2921,7 +2930,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
             </h2>
             {statementEdit.kind === "recurring" && (
               <p className="muted-copy">
-                This change applies to {months[Number(reportForm.month) - 1] || "this month"} only. Recurring settings stay the same.
+                {statementEdit.isNew
+                  ? `Adds a one-time charge to ${months[Number(reportForm.month) - 1] || "this month"}'s statement. Recurring settings stay the same.`
+                  : `This change applies to ${months[Number(reportForm.month) - 1] || "this month"} only. Recurring settings stay the same.`}
               </p>
             )}
             <div className="modal-field-grid">
@@ -2969,8 +2980,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   ) : (
                     <input
                       id={fieldId}
+                      className={field.key === "invoiceUrl" ? "optional-field" : undefined}
                       type={field.type === "date" ? "date" : "text"}
-                      value={statementEdit.values[field.key] || ""}
+                      value={field.key === "invoiceUrl" ? storedChargeInvoice(statementEdit.values[field.key]) : statementEdit.values[field.key] || ""}
+                      placeholder={field.key === "invoiceUrl" ? "Optional" : undefined}
                       inputMode={field.type === "number" ? "decimal" : undefined}
                       required={Boolean(
                         statementEdit.isNew &&
@@ -2985,14 +2998,18 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                         values: field.key === "netAcc" ? calculatedReservationValues(moneyToNumber(value), values) : values
                       });
                       }}
+                      onBlur={(event) => {
+                        if (field.key !== "amount" || statementEdit.kind !== "recurring") return;
+                        const raw = event.target.value.trim();
+                        if (!raw) return;
+                        const formatted = money(moneyToNumber(raw));
+                        setStatementEdit((current) => current ? { ...current, values: { ...current.values, amount: formatted } } : current);
+                      }}
                     />
                   )}
-                  {field.key === "amount" && statementEdit.kind === "recurring" && (
+                  {field.key === "amount" && statementEdit.kind === "recurring" && !statementEdit.isNew && settingsAmountForCharge(statementEdit.id) != null && (
                     <span className="field-hint">
-                      Recurring amount: {(() => {
-                        const settingsAmount = settingsAmountForCharge(statementEdit.id);
-                        return settingsAmount == null ? "not in settings" : money(settingsAmount);
-                      })()}
+                      Recurring amount: {money(settingsAmountForCharge(statementEdit.id) || 0)}
                     </span>
                   )}
                 </label>

@@ -228,7 +228,8 @@ const statementLineSchema = new Schema(
     id: { type: String, default: "" },
     label: { type: String, required: true },
     amount: { type: Number, required: true },
-    property: { type: String, default: "" }
+    property: { type: String, default: "" },
+    invoice: { type: String, default: "" }
   },
   { _id: false }
 );
