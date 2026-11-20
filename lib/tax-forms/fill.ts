@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFRef, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { ScheduleRow } from "@/lib/tax-forms/prepare";
 import { mailingBlock, type JurisdictionSettings } from "@/lib/tax-forms/prepare";
 import { moneyText, type JurisdictionTaxResult } from "@/lib/tax-forms/calculate";
@@ -51,17 +51,51 @@ function writeText(form: Form, font: PDFFont, name: string, value: string, requi
   }
 }
 
-function setCheckBox(form: Form, name: string, checked: boolean, required = false) {
-  try {
-    const box = form.getCheckBox(name);
-    if (checked) box.check();
-    else box.uncheck();
-    // Keep the form's own check graphic. Rebuilding it drops the mark in some viewers.
-    form.markFieldAsClean(box.ref);
-  } catch {
-    if (!required) return;
-    throw Object.assign(new Error(`The official form is missing the "${name}" box. Upload the original fillable PDF.`), { status: 400 });
-  }
+function checkAppearance(pdf: PDFDocument, width: number, height: number) {
+  const box = `0.45 0.45 ${(width - 0.9).toFixed(2)} ${(height - 0.9).toFixed(2)} re S`;
+  const x1 = (width * 0.24).toFixed(2);
+  const y1 = (height * 0.46).toFixed(2);
+  const x2 = (width * 0.42).toFixed(2);
+  const y2 = (height * 0.26).toFixed(2);
+  const x3 = (width * 0.78).toFixed(2);
+  const y3 = (height * 0.74).toFixed(2);
+  const content = [
+    "q",
+    "1 1 1 rg",
+    `0 0 ${width.toFixed(2)} ${height.toFixed(2)} re f`,
+    "0 0 0 RG",
+    "0.9 w",
+    box,
+    "1.25 w",
+    `${x1} ${y1} m`,
+    `${x2} ${y2} l`,
+    `${x3} ${y3} l`,
+    "S",
+    "Q"
+  ].join("\n");
+  return pdf.context.register(
+    pdf.context.stream(content, {
+      Type: "XObject",
+      Subtype: "Form",
+      FormType: 1,
+      BBox: [0, 0, width, height]
+    })
+  );
+}
+
+function markMonthly(pdf: PDFDocument, form: Form) {
+  const box = form.getCheckBox("Monthly");
+  box.check();
+  const widget = box.acroField.getWidgets()[0];
+  const rect = widget.getRectangle();
+  const onValue = widget.getOnValue() ?? PDFName.of("Yes");
+  const normal = widget.getNormalAppearance();
+  const dict = normal instanceof PDFRef ? pdf.context.lookup(normal, PDFDict) : normal;
+  if (!(dict instanceof PDFDict)) return;
+  // The official Yes graphic is a font glyph. Replace that one stream with a path.
+  // The other filing-status boxes are left as they were printed.
+  dict.set(onValue, checkAppearance(pdf, rect.width, rect.height));
+  widget.setAppearanceState(onValue);
 }
 
 function amount(result: JurisdictionTaxResult, line: string) {
@@ -142,7 +176,6 @@ function fillGeorgetown(form: Form, font: PDFFont, filled: FilledReturn) {
   put("Position", settings.position);
   put("Phone Number2", settings.phone);
   put("Date4", filled.filedOn);
-  for (const name of ["Button22", "Button23", "Button24"]) setCheckBox(form, name, false);
 }
 
 export function propertyLocation(rows: ScheduleRow[]) {
@@ -160,10 +193,6 @@ function fillSurfside(form: Form, font: PDFFont, filled: FilledReturn) {
   put("Account Number", settings.accountNumber, true);
   put("Property location if different from above", propertyLocation(filled.rows));
   put("Period Ending or Quarter Ending", periodEndingDate(filled.year, filled.month), true);
-  setCheckBox(form, "Monthly", true, true);
-  for (const name of ["Quarterly", "Annually", "28 Day", "Final Return", "Last Filing for Calendar Year"]) {
-    setCheckBox(form, name, false);
-  }
   put("Gross Proceeds From Sale of Food or Beverages", amount(result, "1"), true);
   put("Gross Proceeds from Rental of Transient Accommodations", amount(result, "2"), true);
   put("Gross Proceeds from Paid Admissions andor Amusements 1", amount(result, "3"), true);
@@ -186,8 +215,12 @@ export async function fillTaxForm(template: Uint8Array, filled: FilledReturn) {
   const pdf = await PDFDocument.load(bytes);
   const form = pdf.getForm();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
-  if (filled.settings.formKind === "surfside") fillSurfside(form, font, filled);
-  else fillGeorgetown(form, font, filled);
+  if (filled.settings.formKind === "surfside") {
+    fillSurfside(form, font, filled);
+    markMonthly(pdf, form);
+  } else {
+    fillGeorgetown(form, font, filled);
+  }
   await appendSchedule(pdf, filled);
   if (filled.settings.signatureName) {
     const page = pdf.getPages()[0];
