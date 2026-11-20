@@ -10,6 +10,8 @@ import {
   planBackfill,
   planSavedStatementBackfill,
   planUploadedPdfBackfill,
+  relockStatement,
+  unlockStatement,
   type FinalStatement,
   type StatementExpenseLine,
   type StatementLine,
@@ -166,6 +168,49 @@ describe("emailed statement locks", () => {
   });
 });
 
+describe("unlock and relock", () => {
+  it("keeps the sent snapshot and records who unlocked it", () => {
+    const sent = augustFinal();
+    const unlocked = unlockStatement(sent, "admin@example.com", "2026-11-20T15:00:00.000Z");
+    assert.equal(unlocked.audit.action, "unlock");
+    assert.equal(unlocked.audit.who, "admin@example.com");
+    assert.equal(unlocked.preserved.shareId, sent.shareId);
+    assert.equal(unlocked.preserved.htmlSnapshot, sent.htmlSnapshot);
+    assert.equal(unlocked.audit.before.totals.ownerPayout, sent.totals.ownerPayout);
+    assert.equal(unlocked.audit.after.totals.ownerPayout, sent.totals.ownerPayout);
+    assert.equal(unlocked.preserved.htmlSnapshot.includes(sent.htmlSnapshot.slice(0, 20)), true);
+  });
+
+  it("locks a new snapshot without replacing the sent link", () => {
+    const sent = augustFinal();
+    const unlocked = unlockStatement(sent, "admin@example.com", "2026-11-20T15:00:00.000Z");
+    const nextTotals = { ...sent.totals, ownerPayout: sent.totals.ownerPayout + 25, netAccommodation: sent.totals.netAccommodation + 40 };
+    const relocked = relockStatement(
+      unlocked.preserved,
+      {
+        ...sent,
+        shareId: "new-snapshot",
+        htmlSnapshot: "<p>Recalculated</p>",
+        totals: nextTotals,
+        lockedAt: "2026-11-21T15:00:00.000Z",
+        lockedBy: "admin@example.com"
+      },
+      "admin@example.com",
+      "2026-11-21T15:00:00.000Z"
+    );
+    assert.equal(relocked.audit.action, "relock");
+    assert.equal(relocked.preservedShareId, sent.shareId);
+    assert.equal(relocked.lock.shareId, "new-snapshot");
+    assert.equal(relocked.lock.htmlSnapshot, "<p>Recalculated</p>");
+    assert.equal(unlocked.preserved.htmlSnapshot, sent.htmlSnapshot);
+    assert.equal(relocked.audit.before.totals.ownerPayout, sent.totals.ownerPayout);
+    assert.equal(relocked.audit.after.totals.ownerPayout, nextTotals.ownerPayout);
+    assert.equal(relocked.audit.before.totals.netAccommodation, sent.totals.netAccommodation);
+    assert.equal(relocked.audit.after.totals.netAccommodation, nextTotals.netAccommodation);
+    assert.throws(() => relockStatement(unlocked.preserved, { ...sent, shareId: sent.shareId }, "admin@example.com", "2026-11-21T15:00:00.000Z"));
+  });
+});
+
 describe("1099 from emailed finals", () => {
   it("uses the August deposit and flags months with no final", () => {
     const august = augustFinal();
@@ -200,7 +245,7 @@ describe("1099 from emailed finals", () => {
     assert.match(report.html, /Total from 1 of 12 final months/);
     assert.match(report.html, /11 months are not final, needs the sent statement/);
     assert.match(report.html, /Not final, needs the sent statement/);
-    assert.match(report.html, /Open January/);
+    assert.equal(report.html.includes("Open January"), false);
     assert.match(report.html, /\$12,345\.26/);
     assert.equal(report.html.includes("$340.00"), false);
     assert.equal(report.html.includes("Deposit not recorded"), false);
@@ -263,7 +308,7 @@ describe("1099 from emailed finals", () => {
       ]
     });
     assert.match(report.html, /Not final, needs the sent statement/);
-    assert.match(report.html, /Open January/);
+    assert.equal(report.html.includes("Open January"), false);
     assert.match(report.html, /\$12,345\.26/);
     assert.equal(report.html.includes("$999.00"), false);
     assert.equal(report.summary.netToOwner, 12345.26);

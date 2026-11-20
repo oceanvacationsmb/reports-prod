@@ -3645,3 +3645,18 @@ tr:last-child td {
     text-transform: uppercase;
   }
 }
+
+.gri-locality {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+}
+
+.tax-form-panel {
+  margin-top: 24px;
+}
+
+.tax-form-results {
+  display: grid;
+  gap: 18px;
+}

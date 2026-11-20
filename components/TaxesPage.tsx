@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Printer } from "lucide-react";
 import type { PropertyTaxReport } from "@/lib/reporting/report-taxes";
+import { TaxFormsPanel } from "@/components/TaxFormsPanel";
 
 const months = [
   "January",
@@ -173,6 +174,8 @@ export function TaxesPage() {
           ))}
         </article>
       )}
+
+      <TaxFormsPanel month={month} year={year} />
     </section>
   );
 }

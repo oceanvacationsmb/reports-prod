@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingIncludes: {
-    "/api/reports/pdf/*": ["./node_modules/@sparticuz/chromium/bin/**/*"]
+    "/api/reports/pdf/*": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+    "/api/tax-forms/pdf": ["./node_modules/@neslinesli93/qpdf-wasm/dist/**/*"],
+    "/api/tax-jurisdictions/*/template": ["./node_modules/@neslinesli93/qpdf-wasm/dist/**/*"]
   },
   serverExternalPackages: [
     "mongoose",
@@ -9,7 +11,9 @@ const nextConfig = {
     "jsonwebtoken",
     "cloudinary",
     "@sparticuz/chromium",
-    "puppeteer-core"
+    "puppeteer-core",
+    "@neslinesli93/qpdf-wasm",
+    "pdf-lib"
   ]
 };
 

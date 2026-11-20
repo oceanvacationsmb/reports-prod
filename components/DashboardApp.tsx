@@ -10,6 +10,7 @@ import {
   FileArchive,
   Home,
   Lock,
+  Unlock,
   LogOut,
   MapPinned,
   Plus,
@@ -32,6 +33,7 @@ import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
 import { SimpleReportsPage } from "@/components/SimpleReportsPage";
 import { TaxesPage } from "@/components/TaxesPage";
+import { JurisdictionSelect, JurisdictionSettings } from "@/components/JurisdictionSettings";
 import { batchConfirmCopy, batchResultTitle, type BatchRecipient } from "@/lib/owner-batch";
 import { reportPropertyChoices, reportYearChoices, sameProperty } from "@/lib/reporting/report-options";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
@@ -90,6 +92,13 @@ type Property = {
   _id: string;
   name: string;
   reportAddress?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  managedFrom?: string;
+  managedTo?: string;
+  jurisdictionId?: string;
   municipality?: string;
   taxFlags?: Record<string, boolean>;
 };
@@ -136,8 +145,11 @@ type EmailDraft = {
 type StatementHistoryItem = {
   who: string;
   when: string;
+  action?: "modify" | "unlock" | "relock";
   beforeRecurring: { label: string; amount: number }[];
   afterRecurring: { label: string; amount: number }[];
+  beforeTotals?: { ownerPayout?: number; netAccommodation?: number };
+  afterTotals?: { ownerPayout?: number; netAccommodation?: number };
 };
 
 type StatementLockState = {
@@ -145,6 +157,9 @@ type StatementLockState = {
   year: number;
   month: number;
   locked: boolean;
+  previouslySent?: boolean;
+  sentShareId?: string;
+  sentAt?: string;
   lockedAt: string;
   shareId: string;
   recurring: { label: string; amount: number }[];
@@ -256,6 +271,13 @@ type OwnerArrayField =
 const emptyPropertyForm = {
   name: "",
   reportAddress: "",
+  street: "",
+  city: "",
+  state: "",
+  postalCode: "",
+  managedFrom: "",
+  managedTo: "",
+  jurisdictionId: "",
   municipality: "",
   taxFlags: new Set<string>()
 };
@@ -316,8 +338,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   });
   const [settingsForm, setSettingsForm] = useState({
     guestyCacheTtlMinutes: "30",
-    defaultCleaningCaps: "[]"
+    defaultCleaningCaps: "[]",
+    tenNinetyNineBasis: "ownerPayout"
   });
+  const [unlockOpen, setUnlockOpen] = useState(false);
   const [propertyForm, setPropertyForm] = useState(emptyPropertyForm);
   const [vendorForm, setVendorForm] = useState(emptyVendorForm);
   const [expenseTypeForm, setExpenseTypeForm] = useState(emptyExpenseTypeForm);
@@ -393,7 +417,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         api<{ properties: Property[] }>("/api/properties"),
         api<{ vendors: Vendor[] }>("/api/vendors"),
         api<{ expenseTypes: ExpenseTypeOption[] }>("/api/expense-types"),
-        api<{ settings: { guestyCacheTtlMinutes: number; defaultCleaningCaps: unknown[] } }>("/api/settings")
+        api<{ settings: { guestyCacheTtlMinutes: number; defaultCleaningCaps: unknown[]; tenNinetyNineBasis?: string } }>("/api/settings")
       ]);
       const visibleOwnerData = ownerData.owners.filter((owner) => !isAggregateOwner(owner));
       setOwners(ownerData.owners);
@@ -404,7 +428,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       setExpenseTypes(expenseTypeData.expenseTypes);
       setSettingsForm({
         guestyCacheTtlMinutes: String(settingsData.settings.guestyCacheTtlMinutes || 30),
-        defaultCleaningCaps: stringify(settingsData.settings.defaultCleaningCaps)
+        defaultCleaningCaps: stringify(settingsData.settings.defaultCleaningCaps),
+        tenNinetyNineBasis: settingsData.settings.tenNinetyNineBasis === "grossRents" ? "grossRents" : "ownerPayout"
       });
       if (selectedOwnerId && !visibleOwnerData.some((owner) => owner._id === selectedOwnerId)) setSelectedOwnerId("");
       if (!selectedOwnerId && visibleOwnerData[0]) setSelectedOwnerId(visibleOwnerData[0]._id);
@@ -723,6 +748,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       const data = await api<{
         report: ReportResponse;
         locked?: boolean;
+        previouslySent?: boolean;
+        sentShareId?: string;
+        sentAt?: string;
         lockedAt?: string;
         shareId?: string;
         recurring?: { label: string; amount: number }[];
@@ -738,11 +766,15 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           year: Number(reportForm.year),
           month,
           locked: Boolean(data.locked),
+          previouslySent: Boolean(data.previouslySent),
+          sentShareId: data.sentShareId || "",
+          sentAt: data.sentAt || "",
           lockedAt: data.lockedAt || "",
           shareId: data.shareId || "",
           recurring: data.recurring || [],
           history: data.history || []
         });
+        setUnlockOpen(false);
       }
       flash("Report generated.");
     } catch (err) {
@@ -978,6 +1010,74 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       window.open(`${printLink(saved)}?print=1`, "_blank", "noopener,noreferrer");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to prepare print view.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function unlockStatement(event: React.FormEvent) {
+    event.preventDefault();
+    if (!statementLock?.locked) return;
+    try {
+      setBusy("unlock");
+      setError("");
+      await api("/api/locked-statements/unlock", {
+        method: "POST",
+        body: JSON.stringify({
+          ownerId: statementLock.ownerId,
+          year: statementLock.year,
+          month: statementLock.month,
+          confirmSent: true
+        })
+      });
+      setUnlockOpen(false);
+      setModifyOpen(false);
+      await runReport();
+      flash("Statement unlocked. The sent link is unchanged. Approve it again to lock the new snapshot.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to unlock this statement.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function download1099(format: "pdf" | "xlsx") {
+    try {
+      setBusy(`1099-${format}`);
+      setError("");
+      const ownerId = isAdmin ? selectedOwnerId : user.ownerId || "";
+      const response = await fetch(`/api/ten-ninety-nine?year=${reportForm.year}${ownerId ? `&ownerId=${encodeURIComponent(ownerId)}` : ""}&format=${format}`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Unable to download the 1099.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `1099-${reportForm.year}.${format === "pdf" ? "pdf" : "xlsx"}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download the 1099.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function showAllOwners1099() {
+    try {
+      setBusy("1099-all");
+      setError("");
+      const data = await api<{ html: string; report: { year: number } }>(`/api/ten-ninety-nine?year=${reportForm.year}`);
+      setCurrentReport({
+        title: `${reportForm.year} 1099 Report`,
+        periodLabel: String(reportForm.year),
+        html: data.html,
+        summary: {}
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load the 1099.");
     } finally {
       setBusy("");
     }
@@ -1334,7 +1434,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         method: "PATCH",
         body: JSON.stringify({
           guestyCacheTtlMinutes: Number(settingsForm.guestyCacheTtlMinutes),
-          defaultCleaningCaps: parseArray(settingsForm.defaultCleaningCaps, "Default cleaning caps")
+          defaultCleaningCaps: parseArray(settingsForm.defaultCleaningCaps, "Default cleaning caps"),
+          tenNinetyNineBasis: settingsForm.tenNinetyNineBasis === "grossRents" ? "grossRents" : "ownerPayout"
         })
       });
       flash("Settings saved.");
@@ -1355,6 +1456,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         body: JSON.stringify({
           name: propertyForm.name,
           reportAddress: propertyForm.reportAddress,
+          street: propertyForm.street,
+          city: propertyForm.city,
+          state: propertyForm.state,
+          postalCode: propertyForm.postalCode,
+          managedFrom: propertyForm.managedFrom,
+          managedTo: propertyForm.managedTo,
+          jurisdictionId: propertyForm.jurisdictionId,
           municipality: propertyForm.municipality,
           taxFlags: flags
         })
@@ -1377,6 +1485,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     setPropertyForm({
       name: property.name,
       reportAddress: property.reportAddress || "",
+      street: property.street || "",
+      city: property.city || "",
+      state: property.state || "",
+      postalCode: property.postalCode || "",
+      managedFrom: property.managedFrom || "",
+      managedTo: property.managedTo || "",
+      jurisdictionId: property.jurisdictionId || "",
       municipality: property.municipality || "",
       taxFlags: new Set(Object.entries(property.taxFlags || {}).filter(([, enabled]) => enabled).map(([flag]) => flag))
     });
@@ -1775,7 +1890,23 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                       {emailButtonLabel()}
                     </button>
                     {reportForm.reportKey === "1099" && (
-                      <p className="helper-line batch-month-note">Print all and Email all work on one month. Pick Statement or Owner Summary.</p>
+                      <>
+                        <p className="helper-line batch-month-note">Amounts come from locked statements. A month with no locked statement is flagged instead of shown as zero.</p>
+                        <button className="secondary-action" type="button" onClick={() => void download1099("pdf")} disabled={busy.startsWith("1099")}>
+                          <Download size={18} />
+                          {busy === "1099-pdf" ? "Downloading..." : "1099 PDF"}
+                        </button>
+                        <button className="secondary-action" type="button" onClick={() => void download1099("xlsx")} disabled={busy.startsWith("1099")}>
+                          <Download size={18} />
+                          {busy === "1099-xlsx" ? "Downloading..." : "1099 Excel"}
+                        </button>
+                        {isAdmin && (
+                          <button className="secondary-action" type="button" onClick={() => void showAllOwners1099()} disabled={busy === "1099-all"}>
+                            <FileText size={18} />
+                            {busy === "1099-all" ? "Loading..." : "All owners"}
+                          </button>
+                        )}
+                      </>
                     )}
                     {reportForm.reportKey === "allOwnersTax" && isAdmin && (
                       <button className="secondary-action" type="button" onClick={() => openTaxSettings()}>
@@ -1793,12 +1924,32 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </div>
                     <a href={`/share/${statementLock.shareId}`} target="_blank" rel="noreferrer">Open the permanent link</a>
                     {isAdmin && (
-                      <button className="secondary-action" type="button" onClick={openModify}>
-                        <Pencil size={16} />
-                        Modify
-                      </button>
+                      <>
+                        <button className="secondary-action" type="button" onClick={openModify}>
+                          <Pencil size={16} />
+                          Modify
+                        </button>
+                        <button className="secondary-action" type="button" onClick={() => { setUnlockOpen(true); setModifyOpen(false); setEmailConfirm(false); }}>
+                          <Unlock size={16} />
+                          Unlock statement
+                        </button>
+                      </>
                     )}
                   </div>
+                )}
+                {unlockOpen && statementMatches() && statementLock?.locked && (
+                  <form className="editor-panel" onSubmit={(event) => void unlockStatement(event)}>
+                    <h2>Unlock this statement?</h2>
+                    <div className="message error" role="alert">
+                      <span>This statement was already sent to the owner. The sent link stays as it is. Unlocking lets you edit and recalculate, then approve a new snapshot. The earlier totals stay in the audit.</span>
+                    </div>
+                    <div className="inline-actions">
+                      <button className="secondary-action" type="button" onClick={() => setUnlockOpen(false)}>Cancel</button>
+                      <button className="primary-action" type="submit" disabled={busy === "unlock"}>
+                        {busy === "unlock" ? "Unlocking..." : "Unlock statement"}
+                      </button>
+                    </div>
+                  </form>
                 )}
                 {emailConfirm && statementMatches() && statementLock && !statementLock.locked && (
                   <form className="editor-panel email-confirm" onSubmit={(event) => { event.preventDefault(); void sendOwnerEmail(); }}>
@@ -1820,8 +1971,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     {statementLock.history.map((entry) => {
                       const changes = changedHistoryLines(entry);
                       return (
-                        <div key={`${entry.when}-${entry.who}`}>
-                          <p><strong>{formatWhen(entry.when)}</strong> by {entry.who}</p>
+                        <div key={`${entry.when}-${entry.who}-${entry.action || "modify"}`}>
+                          <p><strong>{formatWhen(entry.when)}</strong> by {entry.who}. {entry.action === "unlock" ? "Unlocked" : entry.action === "relock" ? "Locked again" : "Modified"}.</p>
+                          {entry.beforeTotals && entry.afterTotals && (
+                            <p className="helper-line">Owner payout {money(entry.beforeTotals.ownerPayout || 0)} to {money(entry.afterTotals.ownerPayout || 0)}. Net accommodation {money(entry.beforeTotals.netAccommodation || 0)} to {money(entry.afterTotals.netAccommodation || 0)}.</p>
+                          )}
                           <div className="table-wrap">
                             <table className="history-table">
                               <thead><tr><th>Line</th><th>Before</th><th>After</th></tr></thead>
@@ -1842,7 +1996,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   </section>
                 )}
                 {statementMatches() && statementLock && !statementLock.locked && isAdmin && (
-                  <div className="status-pill draft">Draft, not sent</div>
+                  statementLock.previouslySent ? (
+                    <div className="message statement-lock">
+                      <div className="status-pill draft">Unlocked. Edit this month, then approve it to lock a new snapshot.</div>
+                      {statementLock.sentShareId && <a href={`/share/${statementLock.sentShareId}`} target="_blank" rel="noreferrer">Sent version</a>}
+                    </div>
+                  ) : (
+                    <div className="status-pill draft">Draft, not sent</div>
+                  )
                 )}
                 {modifyOpen && statementLock?.locked && (
                   <form className="editor-panel statement-modify" onSubmit={saveModification}>
@@ -2447,6 +2608,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 Default cleaning caps
                 <textarea value={settingsForm.defaultCleaningCaps} onChange={(event) => setSettingsForm({ ...settingsForm, defaultCleaningCaps: event.target.value })} />
               </label>
+              <label>
+                1099 amount
+                <select value={settingsForm.tenNinetyNineBasis} onChange={(event) => setSettingsForm({ ...settingsForm, tenNinetyNineBasis: event.target.value })}>
+                  <option value="ownerPayout">Owner payout on the locked statement</option>
+                  <option value="grossRents">Gross rents (net accommodation on the locked statement)</option>
+                </select>
+              </label>
               <button className="primary-action" disabled={busy === "settings"}>
                 <Save size={18} />
                 Save settings
@@ -2454,6 +2622,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
             </form>
 
             <div className="settings-stack">
+              <JurisdictionSettings />
               <form className="editor-panel compact" onSubmit={saveProperty} ref={propertySettingsRef}>
                 <div className="panel-heading">
                   <Building2 size={20} />
@@ -2466,7 +2635,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     onChange={(event) => {
                       const propertyName = event.target.value;
                       if (!propertyName) {
-                        setPropertyForm({ name: "", reportAddress: "", municipality: "", taxFlags: new Set() });
+                        setPropertyForm({ ...emptyPropertyForm, taxFlags: new Set() });
                         return;
                       }
                       loadPropertySettings(propertyName);
@@ -2486,8 +2655,33 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 </label>
                 <label>
                   Report address
-                  <input value={propertyForm.reportAddress} onChange={(event) => setPropertyForm({ ...propertyForm, reportAddress: event.target.value })} placeholder="1211 N Waccamaw Dr, Murrells Inlet, SC 29576" />
+                  <input value={propertyForm.reportAddress} onChange={(event) => setPropertyForm({ ...propertyForm, reportAddress: event.target.value })} placeholder="100 Sample Street, Sample City, SC 29500" />
                 </label>
+                <label>
+                  Street
+                  <input value={propertyForm.street} onChange={(event) => setPropertyForm({ ...propertyForm, street: event.target.value })} />
+                </label>
+                <label>
+                  City
+                  <input value={propertyForm.city} onChange={(event) => setPropertyForm({ ...propertyForm, city: event.target.value })} />
+                </label>
+                <label>
+                  State
+                  <input value={propertyForm.state} onChange={(event) => setPropertyForm({ ...propertyForm, state: event.target.value })} />
+                </label>
+                <label>
+                  ZIP
+                  <input value={propertyForm.postalCode} onChange={(event) => setPropertyForm({ ...propertyForm, postalCode: event.target.value })} />
+                </label>
+                <label>
+                  Managed from
+                  <input type="date" value={propertyForm.managedFrom} onChange={(event) => setPropertyForm({ ...propertyForm, managedFrom: event.target.value })} />
+                </label>
+                <label>
+                  Managed through
+                  <input type="date" value={propertyForm.managedTo} onChange={(event) => setPropertyForm({ ...propertyForm, managedTo: event.target.value })} />
+                </label>
+                <JurisdictionSelect value={propertyForm.jurisdictionId} onChange={(jurisdictionId) => setPropertyForm({ ...propertyForm, jurisdictionId })} />
                 <label>
                   Municipality
                   <input

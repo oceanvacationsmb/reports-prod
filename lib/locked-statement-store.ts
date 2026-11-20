@@ -1,6 +1,6 @@
 import { connectDb } from "@/lib/db";
 import { asPlain } from "@/lib/http";
-import { Expense, LockedStatement, Owner, Property, SavedReport, StatementAudit } from "@/lib/models";
+import { Expense, LockedStatement, Owner, Property, SavedReport, StatementAudit, StatementSnapshot } from "@/lib/models";
 import { getGuestyReservations } from "@/lib/guesty";
 import { getSettings } from "@/lib/settings";
 import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
@@ -9,6 +9,8 @@ import {
   cents,
   lockOnEmail,
   modifyLock,
+  relockStatement,
+  unlockStatement,
   type FinalMonthInput,
   type FinalStatement,
   type StatementExpenseLine,
@@ -20,9 +22,11 @@ import type { ExpenseLike, OwnerLike, PropertyLike } from "@/lib/types";
 export type StatementHistoryItem = {
   who: string;
   when: string;
-  action: "modify";
+  action: "modify" | "unlock" | "relock";
   beforeRecurring: StatementLine[];
   afterRecurring: StatementLine[];
+  beforeTotals: StatementTotals;
+  afterTotals: StatementTotals;
 };
 
 function httpError(message: string, status: number) {
@@ -135,15 +139,49 @@ async function loadHistory(ownerId: string, year: number, month: number): Promis
     await StatementAudit.find({ ownerId, year, month }).sort({ when: -1 }).limit(20).lean()
   ) as Array<Record<string, unknown>>;
   return audits.map((audit) => {
-    const before = (audit.before || {}) as { recurring?: unknown };
-    const after = (audit.after || {}) as { recurring?: unknown };
+    const before = (audit.before || {}) as { recurring?: unknown; totals?: unknown };
+    const after = (audit.after || {}) as { recurring?: unknown; totals?: unknown };
+    const action = audit.action === "unlock" || audit.action === "relock" ? audit.action : "modify";
     return {
       who: String(audit.who || ""),
       when: audit.when ? new Date(String(audit.when)).toISOString() : "",
-      action: "modify" as const,
+      action,
       beforeRecurring: linesFromDoc(before.recurring),
-      afterRecurring: linesFromDoc(after.recurring)
+      afterRecurring: linesFromDoc(after.recurring),
+      beforeTotals: totalsFromUnknown(before.totals),
+      afterTotals: totalsFromUnknown(after.totals)
     };
+  });
+}
+
+function totalsFromUnknown(value: unknown): StatementTotals {
+  const totals = (value || {}) as Record<string, unknown>;
+  return {
+    netAccommodation: numberValue(totals.netAccommodation),
+    pmc: numberValue(totals.pmc),
+    expenses: numberValue(totals.expenses),
+    recurringCharges: numberValue(totals.recurringCharges),
+    ownerPayout: numberValue(totals.ownerPayout)
+  };
+}
+
+async function keepSnapshot(statement: FinalStatement) {
+  const existing = await StatementSnapshot.findOne({ shareId: statement.shareId }).lean();
+  if (existing) return;
+  await StatementSnapshot.create({
+    ownerId: statement.ownerId,
+    year: statement.year,
+    month: statement.month,
+    shareId: statement.shareId,
+    periodLabel: statement.periodLabel,
+    htmlSnapshot: statement.htmlSnapshot,
+    recurring: statement.recurring,
+    expenses: statement.expenses,
+    totals: statement.totals,
+    depositRecorded: statement.depositRecorded,
+    lockedAt: statement.lockedAt ? new Date(statement.lockedAt) : new Date(),
+    lockedBy: statement.lockedBy || "",
+    archivedAt: new Date()
   });
 }
 
@@ -213,6 +251,129 @@ export async function findFinalStatement(ownerId: string, year: number, month: n
   return doc ? toFinalStatement(doc) : null;
 }
 
+export async function statementAvailability(ownerId: string, year: number, month: number) {
+  await connectDb();
+  const doc = asPlain(await LockedStatement.findOne({ ownerId, year, month }).lean()) as Record<string, unknown> | null;
+  if (!doc) return { locked: false as const, previouslySent: false };
+  if (doc.locked !== false) {
+    return { locked: true as const, previouslySent: true, statement: toFinalStatement(doc) };
+  }
+  return {
+    locked: false as const,
+    previouslySent: true,
+    sentShareId: String(doc.shareId || ""),
+    sentAt: doc.unlockedAt ? new Date(String(doc.unlockedAt)).toISOString() : "",
+    sentTotals: totalsFromUnknown((doc.totals || {}) as unknown)
+  };
+}
+
+export async function listFinalStatementsForYear(year: number) {
+  await connectDb();
+  const docs = asPlain(await LockedStatement.find({ year, locked: true }).lean()) as Record<string, unknown>[];
+  return docs.map((doc) => toFinalStatement(doc));
+}
+
+function preservedFrom(statement: FinalStatement) {
+  return {
+    ownerId: statement.ownerId,
+    year: statement.year,
+    month: statement.month,
+    shareId: statement.shareId,
+    periodLabel: statement.periodLabel,
+    htmlSnapshot: statement.htmlSnapshot,
+    recurring: statement.recurring,
+    expenses: statement.expenses,
+    totals: statement.totals,
+    depositRecorded: statement.depositRecorded,
+    lockedAt: statement.lockedAt,
+    lockedBy: statement.lockedBy || ""
+  };
+}
+
+async function relockOpenStatement(openDoc: Record<string, unknown>, owner: OwnerLike, who: string) {
+  const previous = toFinalStatement(openDoc);
+  const computed = await computeStatement(previous.ownerId, previous.year, previous.month);
+  const when = new Date().toISOString();
+  const decision = relockStatement(
+    preservedFrom(previous),
+    {
+      ownerId: previous.ownerId,
+      year: previous.year,
+      month: previous.month,
+      shareId: makeShareId(),
+      periodLabel: computed.report.periodLabel,
+      htmlSnapshot: computed.report.html,
+      recurring: computed.recurring,
+      expenses: computed.expenses,
+      totals: computed.totals,
+      depositRecorded: true,
+      lockedAt: when,
+      lockedBy: who
+    },
+    who,
+    when
+  );
+  await LockedStatement.updateOne(
+    { _id: openDoc._id },
+    {
+      $set: {
+        shareId: decision.lock.shareId,
+        periodLabel: decision.lock.periodLabel,
+        htmlSnapshot: decision.lock.htmlSnapshot,
+        recurring: decision.lock.recurring,
+        expenses: decision.lock.expenses,
+        totals: decision.lock.totals,
+        depositRecorded: true,
+        locked: true,
+        lockedAt: new Date(when),
+        lockedBy: who,
+        unlockedAt: null,
+        unlockedBy: ""
+      }
+    }
+  );
+  await ensureShare(decision.lock, owner.name);
+  await keepSnapshot(decision.lock);
+  await StatementAudit.create({ ...decision.audit, when: new Date(when) });
+  return {
+    created: true,
+    lockedAt: when,
+    shareId: decision.lock.shareId,
+    recurring: decision.lock.recurring,
+    history: await loadHistory(previous.ownerId, previous.year, previous.month),
+    report: computed.report
+  };
+}
+
+export async function unlockFinalStatement(input: { ownerId: string; year: number; month: number; who: string }) {
+  await connectDb();
+  const doc = asPlain(
+    await LockedStatement.findOne({ ownerId: input.ownerId, year: input.year, month: input.month, locked: true }).lean()
+  ) as Record<string, unknown> | null;
+  if (!doc) {
+    const open = await LockedStatement.findOne({ ownerId: input.ownerId, year: input.year, month: input.month, locked: false }).lean();
+    if (open) throw httpError("This statement is already unlocked.", 409);
+    throw httpError("There is no locked statement for this month.", 404);
+  }
+  const existing = toFinalStatement(doc);
+  const when = new Date().toISOString();
+  const decision = unlockStatement(existing, input.who, when);
+  await keepSnapshot(existing);
+  await LockedStatement.updateOne(
+    { _id: doc._id },
+    { $set: { locked: false, unlockedAt: new Date(when), unlockedBy: input.who } }
+  );
+  await StatementAudit.create({ ...decision.audit, when: new Date(when) });
+  return {
+    locked: false,
+    previouslySent: true,
+    sentShareId: existing.shareId,
+    sentAt: when,
+    sentTotals: existing.totals,
+    history: await loadHistory(input.ownerId, input.year, input.month)
+  };
+}
+
 export async function listFinalMonths(ownerId: string, year: number): Promise<FinalMonthInput[]> {
   await connectDb();
   const docs = asPlain(await LockedStatement.find({ ownerId, year, locked: true }).lean()) as Record<string, unknown>[];
@@ -251,6 +412,11 @@ export async function emailFinalStatement(input: { ownerId: string; year: number
     };
   }
 
+  const openDoc = asPlain(
+    await LockedStatement.findOne({ ownerId: input.ownerId, year: input.year, month: input.month, locked: false }).lean()
+  ) as Record<string, unknown> | null;
+  if (openDoc) return relockOpenStatement(openDoc, owner, input.who);
+
   const computed = await computeStatement(input.ownerId, input.year, input.month);
   const draft = {
     ownerId: input.ownerId,
@@ -275,7 +441,13 @@ export async function emailFinalStatement(input: { ownerId: string; year: number
   } catch (error) {
     if (!isDuplicate(error)) throw error;
     const winner = await findFinalStatement(input.ownerId, input.year, input.month);
-    if (!winner) throw error;
+    if (!winner) {
+      const openDoc = asPlain(
+        await LockedStatement.findOne({ ownerId: input.ownerId, year: input.year, month: input.month, locked: false }).lean()
+      ) as Record<string, unknown> | null;
+      if (openDoc) return relockOpenStatement(openDoc, owner, input.who);
+      throw error;
+    }
     await ensureShare(winner, owner.name);
     return {
       created: false,
@@ -313,6 +485,7 @@ export async function modifyFinalStatement(input: {
   if (!existingDoc) throw httpError("Email the owner before modifying this month.", 404);
 
   const existing = toFinalStatement(existingDoc);
+  await keepSnapshot(existing);
   const computed = await computeStatement(input.ownerId, input.year, input.month, input.recurring);
   const result = modifyLock(
     existing,

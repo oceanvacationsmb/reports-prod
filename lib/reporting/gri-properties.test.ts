@@ -102,7 +102,7 @@ describe("GRI property address", () => {
     assert.ok(report.html.includes("gri-address-hint"));
     assert.ok(report.html.includes("Settings &gt; Properties"));
     assert.equal(report.html.includes("Property address needed"), false);
-    assert.match(report.html, /<strong>NMB - 3104-2<\/strong>/);
+    assert.match(report.html, /<strong class="gri-street">NMB - 3104-2<\/strong>/);
   });
 
   it("uses the report address saved on the exact name MB - Tuscan A", () => {

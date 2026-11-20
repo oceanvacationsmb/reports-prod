@@ -41,12 +41,14 @@ export type FinalStatement = {
   sourceRef?: string;
 };
 
+export type StatementAuditAction = "modify" | "unlock" | "relock";
+
 export type StatementAuditRecord = {
   ownerId: string;
   year: number;
   month: number;
   shareId: string;
-  action: "modify";
+  action: StatementAuditAction;
   who: string;
   when: string;
   before: {
@@ -189,6 +191,106 @@ export function modifyLock(
         htmlSnapshot: existing.htmlSnapshot
       },
       after
+    }
+  };
+}
+
+export type PreservedStatement = {
+  ownerId: string;
+  year: number;
+  month: number;
+  shareId: string;
+  periodLabel: string;
+  htmlSnapshot: string;
+  recurring: StatementLine[];
+  expenses: StatementExpenseLine[];
+  totals: StatementTotals;
+  depositRecorded: boolean;
+  lockedAt: string;
+  lockedBy: string;
+};
+
+function snapshotOf(existing: FinalStatement): PreservedStatement {
+  return {
+    ownerId: existing.ownerId,
+    year: existing.year,
+    month: existing.month,
+    shareId: existing.shareId,
+    periodLabel: existing.periodLabel,
+    htmlSnapshot: existing.htmlSnapshot,
+    recurring: existing.recurring.map(copyLine),
+    expenses: existing.expenses.map(copyExpense),
+    totals: { ...existing.totals },
+    depositRecorded: existing.depositRecorded,
+    lockedAt: existing.lockedAt,
+    lockedBy: existing.lockedBy || ""
+  };
+}
+
+export function unlockStatement(existing: FinalStatement, who: string, when: string) {
+  const preserved = snapshotOf(existing);
+  return {
+    preserved,
+    audit: {
+      ownerId: existing.ownerId,
+      year: existing.year,
+      month: existing.month,
+      shareId: existing.shareId,
+      action: "unlock" as const,
+      who,
+      when,
+      before: {
+        recurring: preserved.recurring,
+        expenses: preserved.expenses,
+        totals: { ...preserved.totals },
+        htmlSnapshot: preserved.htmlSnapshot
+      },
+      after: {
+        recurring: preserved.recurring.map(copyLine),
+        expenses: preserved.expenses.map(copyExpense),
+        totals: { ...preserved.totals },
+        htmlSnapshot: preserved.htmlSnapshot
+      }
+    }
+  };
+}
+
+export function relockStatement(previous: PreservedStatement, next: Omit<FinalStatement, "locked">, who: string, when: string) {
+  if (!next.shareId || next.shareId === previous.shareId) {
+    throw new Error("A new lock needs its own link so the sent statement stays unchanged.");
+  }
+  const lock: FinalStatement = {
+    ...next,
+    recurring: next.recurring.map(copyLine),
+    expenses: next.expenses.map(copyExpense),
+    totals: { ...next.totals },
+    locked: true,
+    lockedAt: next.lockedAt || when,
+    lockedBy: next.lockedBy || who
+  };
+  return {
+    lock,
+    preservedShareId: previous.shareId,
+    audit: {
+      ownerId: previous.ownerId,
+      year: previous.year,
+      month: previous.month,
+      shareId: lock.shareId,
+      action: "relock" as const,
+      who,
+      when,
+      before: {
+        recurring: previous.recurring.map(copyLine),
+        expenses: previous.expenses.map(copyExpense),
+        totals: { ...previous.totals },
+        htmlSnapshot: previous.htmlSnapshot
+      },
+      after: {
+        recurring: lock.recurring.map(copyLine),
+        expenses: lock.expenses.map(copyExpense),
+        totals: { ...lock.totals },
+        htmlSnapshot: lock.htmlSnapshot
+      }
     }
   };
 }
