@@ -37,6 +37,7 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
   const [hospitality, setHospitality] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [showEmptyLines, setShowEmptyLines] = useState<Record<string, boolean>>({});
 
   async function preview() {
     setBusy("preview");
@@ -67,7 +68,7 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Unable to generate the PDF.");
+        throw new Error(data.error || "pdf");
       }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -76,8 +77,8 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
       link.download = `${name || "tax-form"}.pdf`;
       link.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to generate the PDF.");
+    } catch {
+      setError("Couldn't create the PDF. Try again. If it keeps failing, check this jurisdiction in Settings.");
     } finally {
       setBusy("");
     }
@@ -125,7 +126,19 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
           {filing.jurisdictions.map((item) => (
             <article className="tax-group" key={item.settings.id}>
               <h2>{item.settings.name}</h2>
-              {item.rows.length === 0 && <p className="empty-state">No properties were actively managed in this jurisdiction for this month.</p>}
+              {item.rows.length === 0 && (
+                <>
+                  <p className="empty-state">No properties were actively managed in this jurisdiction for this month.</p>
+                  <button
+                    className="text-action"
+                    type="button"
+                    aria-expanded={Boolean(showEmptyLines[item.settings.id])}
+                    onClick={() => setShowEmptyLines((current) => ({ ...current, [item.settings.id]: !current[item.settings.id] }))}
+                  >
+                    {showEmptyLines[item.settings.id] ? "Hide form lines" : "Show form lines"}
+                  </button>
+                </>
+              )}
               {item.rows.length > 0 && (
                 <div className="table-wrap">
                   <table className="tax-schedule">
@@ -150,38 +163,18 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
                   </table>
                 </div>
               )}
-              <div className="tax-lines-block">
-                <h3>Form lines</h3>
-                <div className="table-wrap">
-                  <table className="tax-lines">
-                    <thead>
-                      <tr>
-                        <th>Line</th>
-                        <th>Description</th>
-                        <th>Math</th>
-                        <th>Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {item.result.lines.map((line) => (
-                        <tr key={line.line} className={emphasizedLine(line.line) ? "tax-subtotal" : undefined}>
-                          <td>{line.line === "total" ? "Total" : line.line}</td>
-                          <td>{line.label}</td>
-                          <td>{line.formula}</td>
-                          <td>{money(line.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <p className="tax-total-due"><span>Total due</span><strong>{money(item.result.totalDue)}</strong></p>
-              <p className="tax-plain">{plainCalculation(item.settings.formKind)}</p>
-              <details className="tax-how">
-                <summary>How {item.settings.name} calculates this</summary>
-                <p>{detailCalculation(item.settings.formKind, hospitality)}</p>
-                {item.note && <p>{item.note}</p>}
-              </details>
+              {(item.rows.length > 0 || showEmptyLines[item.settings.id]) && <LineTable lines={item.result.lines} />}
+              {(item.rows.length > 0 || showEmptyLines[item.settings.id]) && (
+                <>
+                  <p className="tax-total-due"><span>Total due</span><strong>{money(item.result.totalDue)}</strong></p>
+                  <p className="tax-plain">{plainCalculation(item.settings.formKind)}</p>
+                  <details className="tax-how">
+                    <summary>How {item.settings.name} calculates this</summary>
+                    <p>{detailCalculation(item.settings.formKind, hospitality)}</p>
+                    {item.note && <p>{item.note}</p>}
+                  </details>
+                </>
+              )}
               <button
                 className="secondary-action"
                 type="button"
@@ -196,6 +189,36 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
         </div>
       )}
     </section>
+  );
+}
+
+function LineTable({ lines }: { lines: TaxLine[] }) {
+  return (
+    <div className="tax-lines-block">
+      <h3>Form lines</h3>
+      <div className="table-wrap">
+        <table className="tax-lines">
+          <thead>
+            <tr>
+              <th>Line</th>
+              <th>Description</th>
+              <th>Math</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line) => (
+              <tr key={line.line} className={emphasizedLine(line.line) ? "tax-subtotal" : undefined}>
+                <td>{line.line === "total" ? "Total" : line.line}</td>
+                <td>{line.label}</td>
+                <td>{line.formula}</td>
+                <td>{money(line.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

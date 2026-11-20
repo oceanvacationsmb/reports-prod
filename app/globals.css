@@ -3678,8 +3678,34 @@ tr:last-child td {
   margin-top: 0;
 }
 
+.tax-form-panel,
+.tax-form-results,
+.tax-group,
+.tax-lines-block,
+.tax-form-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .tax-form-panel {
   margin-top: 24px;
+}
+
+.tax-form-panel .table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.tax-form-panel .helper-line,
+.tax-form-panel .tax-plain,
+.tax-form-panel .empty-state {
+  overflow-wrap: break-word;
+}
+
+.tax-form-panel .primary-action,
+.tax-form-panel .secondary-action {
+  max-width: 100%;
 }
 
 .tax-form-actions {
@@ -3700,10 +3726,10 @@ tr:last-child td {
   padding: 0 18px;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 600px) {
   .tax-form-actions {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     width: 100%;
   }
 
@@ -3713,18 +3739,142 @@ tr:last-child td {
   }
 
   .tax-form-actions .primary-action,
-  .tax-form-panel .secondary-action {
+  .tax-form-panel .secondary-action,
+  .tax-form-panel .message .secondary-action {
     width: 100%;
     height: auto;
     min-height: 46px;
     padding: 10px 14px;
     white-space: normal;
   }
+
+  .tax-form-panel .message {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tax-sheet .tax-form-panel .tax-lines,
+  .tax-sheet .tax-form-panel .tax-lines tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .tax-form-panel .tax-lines thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .tax-form-panel .tax-lines tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 2px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tax-sheet .tax-form-panel .tax-lines td {
+    display: block;
+    width: auto !important;
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    text-align: left;
+  }
+
+  .tax-form-panel .tax-lines td:nth-child(1) {
+    font-weight: 800;
+  }
+
+  .tax-form-panel .tax-lines td:nth-child(3) {
+    grid-column: 1 / -1;
+    color: #4a5c5a;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .tax-form-panel .tax-lines tr.tax-subtotal td:nth-child(3) {
+    font-weight: 650;
+  }
+
+  .tax-form-panel .tax-lines td:nth-child(4) {
+    grid-column: 1 / -1;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .tax-form-panel .tax-schedule thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .tax-form-panel .tax-schedule,
+  .tax-form-panel .tax-schedule tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .tax-form-panel .tax-schedule tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    row-gap: 2px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tax-sheet .tax-form-panel .tax-schedule td {
+    display: block;
+    width: auto !important;
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(1) {
+    grid-column: 1 / -1;
+    font-weight: 800;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(2) {
+    grid-column: 1 / -1;
+    color: #4a5c5a;
+    font-size: 13px;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(3),
+  .tax-form-panel .tax-schedule td:nth-child(4) {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(3)::before,
+  .tax-form-panel .tax-schedule td:nth-child(4)::before {
+    content: "Taxable revenue";
+    float: left;
+    color: #4a5c5a;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(4)::before {
+    content: "Tax";
+  }
 }
 
 .tax-form-panel .tax-lines,
 .tax-form-panel .tax-schedule {
-  table-layout: auto;
+  table-layout: fixed;
+  width: 100%;
+  max-width: 100%;
 }
 
 .tax-sheet .tax-form-panel .tax-schedule th,
@@ -3736,12 +3886,12 @@ tr:last-child td {
 .tax-sheet .tax-form-panel .tax-schedule th:nth-child(n + 3),
 .tax-sheet .tax-form-panel .tax-schedule td:nth-child(n + 3) {
   text-align: right;
-  width: 8rem;
+  width: 22%;
 }
 
 .tax-sheet .tax-form-panel .tax-lines th:first-child,
 .tax-sheet .tax-form-panel .tax-lines td:first-child {
-  width: 4.5rem;
+  width: 14%;
   text-align: left;
 }
 
@@ -3810,7 +3960,7 @@ tr:last-child td {
 
 .tax-sheet .tax-form-panel .tax-lines th:nth-child(4),
 .tax-sheet .tax-form-panel .tax-lines td:nth-child(4) {
-  width: 7.5rem;
+  width: 22%;
   text-align: right;
 }
 
