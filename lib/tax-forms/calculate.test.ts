@@ -281,7 +281,7 @@ describe("official form fields", () => {
     assert.equal(form.getTextField("Business Name").getText(), "Sample Rentals");
     assert.equal(form.getTextField("Customer Number").getText(), "SAMPLE-9");
     assert.equal(form.getTextField("Feceral ID No").getText(), "00-0000000");
-    assert.equal(form.getTextField("Month").getText(), "Nov");
+    assert.equal(form.getTextField("Month").getText(), "November");
     assert.equal(form.getTextField("Year").getText(), "2026");
     assert.equal(form.getTextField("Gross Proceeds from Sales Subject to Accommodation Tax").getText(), "1,000.00");
     assert.equal(form.getTextField("Less:  Rentals Thirty (30) or More Days NOT Subject to Local Accommodation Tax").getText(), "100.00");
@@ -348,5 +348,61 @@ describe("official form fields", () => {
     assert.equal(form.getTextField("Telephone").getText(), "555-0100");
     assert.match(form.getTextField("DBA Name and Address").getText() || "", /Sample Rentals/);
     assert.match(form.getTextField("Property location if different from above").getText() || "", /10 Sample Street/);
+  });
+
+  it("points a multi-property Surfside return at the attached schedule", async () => {
+    const names = [
+      "DBA Name and Address",
+      "Account Number",
+      "Property location if different from above",
+      "Period Ending or Quarter Ending",
+      "Gross Proceeds From Sale of Food or Beverages",
+      "Gross Proceeds from Rental of Transient Accommodations",
+      "Gross Proceeds from Paid Admissions andor Amusements 1",
+      "Total Gross Proceeds",
+      "Line 4 x .01",
+      "Line 5 x .05",
+      "Hospitality Discount If Filed Timely",
+      "Total Hospitatlity Fee",
+      "Line 2 x .005",
+      "Line 9 x .05",
+      "Accomadations Discount If Filed Timely",
+      "Total Accomadations Tax",
+      "TOTAL AMOUNT DUE",
+      "Telephone",
+      "Date"
+    ];
+    const template = await textForm(names, "Monthly");
+    const pdfDoc = await PDFDocument.load(template);
+    pdfDoc.getForm().createCheckBox("Quarterly").addToPage(pdfDoc.getPages()[0], { x: 40, y: 20, width: 12, height: 12 });
+    const withQuarter = await pdfDoc.save();
+    const result = calculateSurfside({ grossProceeds: 1000, rates: surfsideRates, monthsLate: 0 });
+    const row = {
+      address: { street: "10 Sample Street", city: "Sample City", state: "SC", postalCode: "29500" },
+      taxableRevenue: 500,
+      tax: 7.5,
+      accommodationTax: 2.5,
+      hospitalityTax: 5
+    };
+    const filled = await fillTaxForm(withQuarter, {
+      settings: settings("surfside"),
+      result,
+      rows: [
+        { ...row, property: "Cottage", addressLine: "10 Sample Street, Sample City, SC 29500" },
+        { ...row, property: "Cabin", addressLine: "20 Sample Street, Sample City, SC 29500" }
+      ],
+      year: 2026,
+      month: 6,
+      filedOn: "07/08/2026"
+    });
+    const pdf = await PDFDocument.load(filled);
+    const form = pdf.getForm();
+    assert.equal(form.getTextField("Property location if different from above").getText(), "See attached schedule");
+    assert.equal(form.getCheckBox("Monthly").isChecked(), true);
+    assert.equal(form.getCheckBox("Quarterly").isChecked(), false);
+    assert.deepEqual(
+      result.lines.map((line) => line.line),
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "total"]
+    );
   });
 });

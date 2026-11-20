@@ -90,7 +90,7 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
         <h2>Tax forms</h2>
       </div>
       <p className="helper-line">Amounts come from the tax report above. Preview them, then download one PDF per jurisdiction.</p>
-      <div className="control-grid screen-controls">
+      <div className="tax-form-actions">
         <label>
           Months late
           <input value={monthsLate} inputMode="numeric" onChange={(event) => setMonthsLate(event.target.value.replace(/[^\d]/g, "").slice(0, 2))} />
@@ -128,7 +128,7 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
               {item.rows.length === 0 && <p className="empty-state">No properties were actively managed in this jurisdiction for this month.</p>}
               {item.rows.length > 0 && (
                 <div className="table-wrap">
-                  <table>
+                  <table className="tax-schedule">
                     <thead>
                       <tr>
                         <th>Property</th>
@@ -151,7 +151,7 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
                 </div>
               )}
               <div className="table-wrap">
-                <table>
+                <table className="tax-lines">
                   <thead>
                     <tr>
                       <th>Line</th>
@@ -163,7 +163,7 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
                   <tbody>
                     {item.result.lines.map((line) => (
                       <tr key={line.line}>
-                        <td>{line.line}</td>
+                        <td>{line.line === "total" ? "Total" : line.line}</td>
                         <td>{line.label}</td>
                         <td>{line.formula}</td>
                         <td>{money(line.amount)}</td>

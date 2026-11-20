@@ -60,12 +60,25 @@ export async function listJurisdictionSettings() {
   return (docs as Record<string, unknown>[]).map(jurisdictionSettings);
 }
 
+function pdfBytes(value: unknown) {
+  if (!value) return null;
+  if (value instanceof Uint8Array) return new Uint8Array(value);
+  if (typeof value === "object") {
+    const binary = value as { value?: (asBuffer: boolean) => Uint8Array; buffer?: ArrayBuffer };
+    if (typeof binary.value === "function") {
+      const bytes = binary.value(true);
+      if (bytes?.byteLength) return new Uint8Array(bytes);
+    }
+    if (binary.buffer && binary.buffer.byteLength) return new Uint8Array(binary.buffer);
+  }
+  return null;
+}
+
 export async function jurisdictionTemplate(id: string) {
   await connectDb();
   const doc = await TaxJurisdiction.findById(id).lean() as Record<string, unknown> | null;
   if (!doc) return null;
-  const template = doc.template;
-  const bytes = Buffer.isBuffer(template) ? new Uint8Array(template) : template instanceof Uint8Array ? template : null;
+  const bytes = pdfBytes(doc.template);
   return {
     settings: { ...jurisdictionSettings(doc), hasTemplate: Boolean(bytes?.length) },
     bytes

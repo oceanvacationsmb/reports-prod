@@ -1,8 +1,8 @@
-import { PDFBool, PDFDocument, PDFName, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { ScheduleRow } from "@/lib/tax-forms/prepare";
 import { mailingBlock, type JurisdictionSettings } from "@/lib/tax-forms/prepare";
 import { moneyText, type JurisdictionTaxResult } from "@/lib/tax-forms/calculate";
-import { monthAbbrev, periodEndingDate, periodLabel } from "@/lib/tax-forms/period";
+import { monthName, periodEndingDate, periodLabel } from "@/lib/tax-forms/period";
 import { readablePdf } from "@/lib/tax-forms/decrypt-pdf";
 
 export type FilledReturn = {
@@ -14,12 +14,35 @@ export type FilledReturn = {
   filedOn: string;
 };
 
-function setText(form: ReturnType<PDFDocument["getForm"]>, name: string, value: string) {
+type Form = ReturnType<PDFDocument["getForm"]>;
+
+function fittedSize(font: PDFFont, lines: string[], width: number, height: number, multiline: boolean) {
+  const longest = lines.reduce((best, line) => (line.length > best.length ? line : best), "");
+  let size = Math.min(11, Math.max(6, height - 3));
+  const widest = () => font.widthOfTextAtSize(longest || "0", size);
+  while (size > 6 && widest() > width) size -= 0.25;
+  if (multiline) {
+    while (size > 6 && lines.length * size * 1.2 > height) size -= 0.25;
+  }
+  return size;
+}
+
+function writeText(form: Form, font: PDFFont, name: string, value: string, required: boolean) {
   try {
     const field = form.getTextField(name);
-    field.setFontSize(8);
-    field.setText(value);
+    const widget = field.acroField.getWidgets()[0];
+    const rect = widget?.getRectangle();
+    const maxLength = field.getMaxLength();
+    let text = value;
+    if (typeof maxLength === "number" && maxLength > 0 && text.length > maxLength) text = text.slice(0, maxLength);
+    const lines = text.split("\n");
+    if (rect) {
+      field.setFontSize(fittedSize(font, lines, Math.max(8, rect.width - 4), rect.height, field.isMultiline()));
+    }
+    field.setText(text);
+    field.updateAppearances(font);
   } catch (error) {
+    if (!required) return;
     const message = error instanceof Error ? error.message : "";
     if (/no form field/i.test(message) || /is not a text field/i.test(message)) {
       throw Object.assign(new Error(`The official form is missing the "${name}" field. Upload the original fillable PDF.`), { status: 400 });
@@ -28,33 +51,16 @@ function setText(form: ReturnType<PDFDocument["getForm"]>, name: string, value: 
   }
 }
 
-function setOptionalText(form: ReturnType<PDFDocument["getForm"]>, name: string, value: string) {
+function setCheckBox(form: Form, name: string, checked: boolean, required = false) {
   try {
-    const field = form.getTextField(name);
-    field.setFontSize(8);
-    field.setText(value);
+    const box = form.getCheckBox(name);
+    if (checked) box.check();
+    else box.uncheck();
+    // Keep the form's own check graphic. Rebuilding it drops the mark in some viewers.
+    form.markFieldAsClean(box.ref);
   } catch {
-    // Some official copies omit unused identity lines.
-  }
-}
-
-async function checkMonthly(pdf: PDFDocument, form: ReturnType<PDFDocument["getForm"]>) {
-  try {
-    const box = form.getCheckBox("Monthly");
-    box.check();
-    const widget = box.acroField.getWidgets()[0];
-    const rect = widget.getRectangle();
-    const page = pdf.getPages()[0];
-    const font = await pdf.embedFont(StandardFonts.HelveticaBold);
-    page.drawText("X", {
-      x: rect.x + 4,
-      y: rect.y + 4,
-      size: 11,
-      font,
-      color: rgb(0.06, 0.15, 0.13)
-    });
-  } catch {
-    throw Object.assign(new Error('The official form is missing the "Monthly" filing box. Upload the original fillable PDF.'), { status: 400 });
+    if (!required) return;
+    throw Object.assign(new Error(`The official form is missing the "${name}" box. Upload the original fillable PDF.`), { status: 400 });
   }
 }
 
@@ -97,95 +103,114 @@ async function appendSchedule(pdf: PDFDocument, filled: FilledReturn) {
   write(`Amount due on the return ${moneyText(filled.result.totalDue)}`, 11, bold);
 }
 
-function drawSignature(pdf: PDFDocument, text: string, x: number, y: number) {
-  const page = pdf.getPages()[0];
-  const font = pdf.embedFont(StandardFonts.Helvetica);
-  return font.then((face) => {
-    page.drawText(text, { x, y, size: 10, font: face, color: rgb(0.06, 0.15, 0.13) });
-  });
+function drawFittedLine(page: PDFPage, font: PDFFont, text: string, box: { x: number; y: number; width: number; height: number }) {
+  const padding = 3;
+  const innerWidth = Math.max(8, box.width - padding * 2);
+  let size = Math.min(10, Math.max(6, box.height - 4));
+  while (size > 6 && font.widthOfTextAtSize(text, size) > innerWidth) size -= 0.25;
+  const baseline = box.y + Math.max(2, (box.height - size) / 2);
+  page.drawText(text, { x: box.x + padding, y: baseline, size, font, color: rgb(0.06, 0.15, 0.13) });
 }
 
-function fillGeorgetown(form: ReturnType<PDFDocument["getForm"]>, filled: FilledReturn) {
+function fillGeorgetown(form: Form, font: PDFFont, filled: FilledReturn) {
   const settings = filled.settings;
   const result = filled.result;
-  setText(form, "Business Name", settings.businessName);
-  setOptionalText(form, "Customer Number", settings.accountNumber);
-  setOptionalText(form, "Owners Name", settings.ownerName || settings.businessName);
-  setOptionalText(form, "Phone Number1", settings.phone);
-  setOptionalText(form, "Mailing Address", settings.street);
-  setOptionalText(form, "City", settings.city);
-  setOptionalText(form, "State", settings.state);
-  setOptionalText(form, "Zip Code", settings.postalCode);
-  setOptionalText(form, "Feceral ID No", settings.federalId);
-  setOptionalText(form, "Email Address", settings.email);
-  setText(form, "Month", monthAbbrev(filled.month));
-  setText(form, "Year", String(filled.year));
-  setText(form, "Gross Proceeds from Sales", amount(result, "1"));
-  setText(form, "Less: Retail Sales NOT Subject to Hospitality Tax", amount(result, "2"));
-  setText(form, "Food and Beverage Sales Subject to Hospitality Tax", amount(result, "3"));
-  setText(form, "Local Hospitality Tax Due", amount(result, "4"));
-  setText(form, "Gross Proceeds from Sales Subject to Accommodation Tax", amount(result, "5"));
-  setText(form, "Less:  Rentals Thirty (30) or More Days NOT Subject to Local Accommodation Tax", amount(result, "6"));
-  setText(form, "Rentals Subject to Local Accommodation Tax", amount(result, "7"));
-  setText(form, "Local Accommodation Tax Due", amount(result, "8"));
-  setText(form, "Taxes Due", amount(result, "9"));
-  setText(form, "Penalty on Delinquent Taxes: Line 9 X 5% for EACH month late", amount(result, "10"));
-  setText(form, "Total Amount Due (Line 9 + Line 10)", amount(result, "11"));
-  setOptionalText(form, "Position", settings.position);
-  setOptionalText(form, "Phone Number2", settings.phone);
-  setOptionalText(form, "Date4", filled.filedOn);
+  const put = (name: string, value: string, required = false) => writeText(form, font, name, value, required);
+  put("Business Name", settings.businessName, true);
+  put("Customer Number", settings.accountNumber);
+  put("Owners Name", settings.ownerName || settings.businessName);
+  put("Phone Number1", settings.phone);
+  put("Mailing Address", settings.street);
+  put("City", settings.city);
+  put("State", settings.state);
+  put("Zip Code", settings.postalCode);
+  put("Feceral ID No", settings.federalId);
+  put("Email Address", settings.email);
+  put("Month", monthName(filled.month), true);
+  put("Year", String(filled.year), true);
+  put("Gross Proceeds from Sales", amount(result, "1"), true);
+  put("Less: Retail Sales NOT Subject to Hospitality Tax", amount(result, "2"), true);
+  put("Food and Beverage Sales Subject to Hospitality Tax", amount(result, "3"), true);
+  put("Local Hospitality Tax Due", amount(result, "4"), true);
+  put("Gross Proceeds from Sales Subject to Accommodation Tax", amount(result, "5"), true);
+  put("Less:  Rentals Thirty (30) or More Days NOT Subject to Local Accommodation Tax", amount(result, "6"), true);
+  put("Rentals Subject to Local Accommodation Tax", amount(result, "7"), true);
+  put("Local Accommodation Tax Due", amount(result, "8"), true);
+  put("Taxes Due", amount(result, "9"), true);
+  put("Penalty on Delinquent Taxes: Line 9 X 5% for EACH month late", amount(result, "10"), true);
+  put("Total Amount Due (Line 9 + Line 10)", amount(result, "11"), true);
+  put("Position", settings.position);
+  put("Phone Number2", settings.phone);
+  put("Date4", filled.filedOn);
+  for (const name of ["Button22", "Button23", "Button24"]) setCheckBox(form, name, false);
 }
 
-function propertyLocation(rows: ScheduleRow[]) {
+export function propertyLocation(rows: ScheduleRow[]) {
   const lines = rows.map((row) => row.addressLine || row.property).filter(Boolean);
-  const joined = lines.join("; ");
-  if (!joined) return "";
-  if (joined.length <= 180) return joined;
-  return "See attached property schedule";
+  if (!lines.length) return "";
+  if (lines.length > 1) return "See attached schedule";
+  return lines[0];
 }
 
-async function fillSurfside(pdf: PDFDocument, form: ReturnType<PDFDocument["getForm"]>, filled: FilledReturn) {
+function fillSurfside(form: Form, font: PDFFont, filled: FilledReturn) {
   const settings = filled.settings;
   const result = filled.result;
-  setText(form, "DBA Name and Address", mailingBlock(settings));
-  setText(form, "Account Number", settings.accountNumber);
-  setOptionalText(form, "Property location if different from above", propertyLocation(filled.rows));
-  setText(form, "Period Ending or Quarter Ending", periodEndingDate(filled.year, filled.month));
-  await checkMonthly(pdf, form);
-  setText(form, "Gross Proceeds From Sale of Food or Beverages", amount(result, "1"));
-  setText(form, "Gross Proceeds from Rental of Transient Accommodations", amount(result, "2"));
-  setText(form, "Gross Proceeds from Paid Admissions andor Amusements 1", amount(result, "3"));
-  setText(form, "Total Gross Proceeds", amount(result, "4"));
-  setText(form, "Line 4 x .01", amount(result, "5"));
-  setText(form, "Line 5 x .05", amount(result, "6"));
-  setText(form, "Hospitality Discount If Filed Timely", amount(result, "7"));
-  setText(form, "Total Hospitatlity Fee", amount(result, "8"));
-  setText(form, "Line 2 x .005", amount(result, "9"));
-  setText(form, "Line 9 x .05", amount(result, "10"));
-  setText(form, "Accomadations Discount If Filed Timely", amount(result, "11"));
-  setText(form, "Total Accomadations Tax", amount(result, "12"));
-  setText(form, "TOTAL AMOUNT DUE", amount(result, "total"));
-  setOptionalText(form, "Telephone", settings.phone);
-  setOptionalText(form, "Date", filled.filedOn);
+  const put = (name: string, value: string, required = false) => writeText(form, font, name, value, required);
+  put("DBA Name and Address", mailingBlock(settings), true);
+  put("Account Number", settings.accountNumber, true);
+  put("Property location if different from above", propertyLocation(filled.rows));
+  put("Period Ending or Quarter Ending", periodEndingDate(filled.year, filled.month), true);
+  setCheckBox(form, "Monthly", true, true);
+  for (const name of ["Quarterly", "Annually", "28 Day", "Final Return", "Last Filing for Calendar Year"]) {
+    setCheckBox(form, name, false);
+  }
+  put("Gross Proceeds From Sale of Food or Beverages", amount(result, "1"), true);
+  put("Gross Proceeds from Rental of Transient Accommodations", amount(result, "2"), true);
+  put("Gross Proceeds from Paid Admissions andor Amusements 1", amount(result, "3"), true);
+  put("Total Gross Proceeds", amount(result, "4"), true);
+  put("Line 4 x .01", amount(result, "5"), true);
+  put("Line 5 x .05", amount(result, "6"), true);
+  put("Hospitality Discount If Filed Timely", amount(result, "7"), true);
+  put("Total Hospitatlity Fee", amount(result, "8"), true);
+  put("Line 2 x .005", amount(result, "9"), true);
+  put("Line 9 x .05", amount(result, "10"), true);
+  put("Accomadations Discount If Filed Timely", amount(result, "11"), true);
+  put("Total Accomadations Tax", amount(result, "12"), true);
+  put("TOTAL AMOUNT DUE", amount(result, "total"), true);
+  put("Telephone", settings.phone);
+  put("Date", filled.filedOn);
 }
 
 export async function fillTaxForm(template: Uint8Array, filled: FilledReturn) {
   const bytes = await readablePdf(template);
   const pdf = await PDFDocument.load(bytes);
   const form = pdf.getForm();
-  if (filled.settings.formKind === "surfside") await fillSurfside(pdf, form, filled);
-  else fillGeorgetown(form, filled);
-  form.updateFieldAppearances(await pdf.embedFont(StandardFonts.Helvetica));
-  try {
-    form.acroForm.dict.set(PDFName.of("NeedAppearances"), PDFBool.True);
-  } catch {
-    // The values are already written into the fields.
-  }
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  if (filled.settings.formKind === "surfside") fillSurfside(form, font, filled);
+  else fillGeorgetown(form, font, filled);
   await appendSchedule(pdf, filled);
   if (filled.settings.signatureName) {
-    await drawSignature(pdf, filled.settings.signatureName, filled.settings.formKind === "surfside" ? 110 : 48, filled.settings.formKind === "surfside" ? 96 : 64);
+    const page = pdf.getPages()[0];
+    if (filled.settings.formKind === "surfside") {
+      try {
+        const widget = form.getField("Taxpayers Signature").acroField.getWidgets()[0];
+        const rect = widget.getRectangle();
+        drawFittedLine(page, font, filled.settings.signatureName, { x: rect.x + 2, y: rect.y + 1, width: rect.width - 4, height: rect.height - 2 });
+      } catch {
+        drawFittedLine(page, font, filled.settings.signatureName, { x: 108, y: 94, width: 220, height: 14 });
+      }
+    } else {
+      let box = { x: 84, y: 61, width: 206, height: 16 };
+      try {
+        const position = form.getTextField("Position").acroField.getWidgets()[0].getRectangle();
+        box = { x: position.x - 214, y: position.y + 2, width: 204, height: Math.max(12, position.height - 4) };
+      } catch {
+        // The measured signature cell sits just left of Position.
+      }
+      drawFittedLine(page, font, filled.settings.signatureName, box);
+    }
   }
-  return pdf.save();
+  return pdf.save({ updateFieldAppearances: false });
 }
 
 export function filedOnDate(today = new Date()) {

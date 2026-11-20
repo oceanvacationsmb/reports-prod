@@ -3656,6 +3656,61 @@ tr:last-child td {
   margin-top: 24px;
 }
 
+.tax-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.tax-form-actions label {
+  width: 148px;
+  flex: 0 0 148px;
+}
+
+.tax-form-actions .primary-action {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0 18px;
+}
+
+.tax-form-panel .tax-lines,
+.tax-form-panel .tax-schedule {
+  table-layout: auto;
+}
+
+.tax-sheet .tax-form-panel .tax-schedule th,
+.tax-sheet .tax-form-panel .tax-schedule td {
+  width: auto;
+  text-align: left;
+}
+
+.tax-sheet .tax-form-panel .tax-schedule th:nth-child(n + 3),
+.tax-sheet .tax-form-panel .tax-schedule td:nth-child(n + 3) {
+  text-align: right;
+  width: 8rem;
+}
+
+.tax-sheet .tax-form-panel .tax-lines th:first-child,
+.tax-sheet .tax-form-panel .tax-lines td:first-child {
+  width: 4.5rem;
+  text-align: left;
+}
+
+.tax-sheet .tax-form-panel .tax-lines th:nth-child(2),
+.tax-sheet .tax-form-panel .tax-lines td:nth-child(2),
+.tax-sheet .tax-form-panel .tax-lines th:nth-child(3),
+.tax-sheet .tax-form-panel .tax-lines td:nth-child(3) {
+  width: auto;
+  text-align: left;
+}
+
+.tax-sheet .tax-form-panel .tax-lines th:nth-child(4),
+.tax-sheet .tax-form-panel .tax-lines td:nth-child(4) {
+  width: 7.5rem;
+  text-align: right;
+}
+
 .tax-form-results {
   display: grid;
   gap: 18px;
