@@ -1,7 +1,10 @@
 import { LockedStatement, Owner, StatementMonthOverride } from "@/lib/models";
+import { storedChargeProperty } from "@/lib/charge-property";
 import { recurringExpenses } from "@/lib/reporting/reports";
 import type { StatementLine } from "@/lib/locked-statements";
 import type { OwnerLike } from "@/lib/types";
+
+export { NO_PROPERTY_LABEL, chargePropertyLabel, storedChargeProperty } from "@/lib/charge-property";
 
 export type MonthCharge = {
   id: string;
@@ -29,13 +32,13 @@ export function settingsChargesForMonth(owner: OwnerLike, year: number, month: n
     id: String(expense._id || ""),
     label: expense.type || "Recurring",
     amount: Number(expense.amount) || 0,
-    property: expense.property || ""
+    property: storedChargeProperty(expense.property)
   }));
 }
 
 export function applyMonthChargeChange(
   lines: MonthCharge[],
-  action: { id?: string; label?: string; amount?: number; add?: boolean; remove?: boolean }
+  action: { id?: string; label?: string; amount?: number; property?: string; add?: boolean; remove?: boolean }
 ): MonthCharge[] {
   const next = lines.map((line) => ({ ...line }));
   if (action.add) {
@@ -45,7 +48,7 @@ export function applyMonthChargeChange(
       id: `monthCharge:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       label,
       amount: Number(action.amount) || 0,
-      property: ""
+      property: storedChargeProperty(action.property)
     });
     return next;
   }
@@ -59,7 +62,8 @@ export function applyMonthChargeChange(
   next[index] = {
     ...next[index],
     label: String(action.label).trim(),
-    amount: Number(action.amount) || 0
+    amount: Number(action.amount) || 0,
+    property: action.property === undefined ? next[index].property : storedChargeProperty(action.property)
   };
   return next;
 }
@@ -69,7 +73,7 @@ function asMonthCharges(lines: StatementLine[], year: number, month: number): Mo
     id: line.id || `monthCharge:${year}-${month}-${index}`,
     label: line.label,
     amount: Number(line.amount) || 0,
-    property: line.property || ""
+    property: storedChargeProperty(line.property)
   }));
 }
 
@@ -128,7 +132,7 @@ export async function saveMonthCharges(ownerId: string, year: number, month: num
           id: line.id,
           label: line.label,
           amount: line.amount,
-          property: line.property || ""
+          property: storedChargeProperty(line.property)
         }))
       }
     },
@@ -161,6 +165,7 @@ export async function editMonthCharge(input: {
   id?: string;
   label?: string;
   amount?: number;
+  property?: string;
   add?: boolean;
   remove?: boolean;
 }) {
@@ -182,7 +187,10 @@ export async function editMonthCharge(input: {
   const current = stored
     ? asMonthCharges(stored, input.year, input.month)
     : settingsChargesForMonth(owner as OwnerLike, input.year, input.month);
-  const next = applyMonthChargeChange(current, input);
+  const next = applyMonthChargeChange(current, {
+    ...input,
+    property: input.property === undefined ? undefined : storedChargeProperty(input.property)
+  });
   await saveMonthCharges(input.ownerId, input.year, input.month, next);
   return next;
 }

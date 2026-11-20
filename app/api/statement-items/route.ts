@@ -116,6 +116,7 @@ async function updateRecurring(
     id,
     label: values.type !== undefined ? String(values.type) : undefined,
     amount: values.amount !== undefined ? numberValue(values.amount) : undefined,
+    property: values.property !== undefined ? String(values.property) : undefined,
     add: options.add,
     remove: removing
   });

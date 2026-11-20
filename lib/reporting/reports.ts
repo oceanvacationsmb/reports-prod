@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { chargePropertyLabel, storedChargeProperty } from "@/lib/charge-property";
 import type { AppSettings, CalculatedReservation, ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike, ReportKey } from "@/lib/types";
 import { calculateReservation, pmcPercent } from "@/lib/reporting/formulas";
 import { sameProperty } from "@/lib/reporting/report-options";
@@ -861,18 +862,24 @@ function expensesTable(
 ) {
   const includeProperty = options.includeProperty !== false;
   const columnCount = (includeProperty ? 6 : 5) + (options.readOnly ? 0 : 1);
+  const recurringTable = title === "Recurring Charges";
   const body = expenses
     .map((expense) => {
-      const kind = String(expense._id || "").includes(":") ? "recurring" : "expense";
+      const kind = String(expense._id || "").includes(":") || recurringTable ? "recurring" : "expense";
       const invoiceUrl = safeHttpUrl(expense.invoiceUrl);
+      const propertyText = kind === "recurring" ? chargePropertyLabel(expense.property) : expense.property || "";
+      const storedProperty = kind === "recurring" ? storedChargeProperty(expense.property) : "";
+      const monthTag = expense.monthOnlyLabel
+        ? `<span class="month-only-tag">${escapeHtml(expense.monthOnlyLabel)} only</span>`
+        : "";
       return `
-      <tr>
-        ${includeProperty ? `<td>${escapeHtml(expense.property)}</td>` : ""}
+      <tr${kind === "recurring" ? ` data-charge-property="${escapeHtml(storedProperty)}" data-amount="${escapeHtml(String(Number(expense.amount || 0)))}"` : ""}>
+        ${includeProperty ? `<td>${escapeHtml(propertyText)}</td>` : ""}
         <td>${escapeHtml(expense.type)}</td>
         <td>${escapeHtml(expense.notes || "")}</td>
         <td>${escapeHtml(expense.vendor || "")}</td>
-        <td>${formatMoney(Number(expense.amount || 0))}</td>
-        <td>${invoiceUrl ? `<a href="${escapeHtml(invoiceUrl)}" target="_blank" rel="noreferrer">Invoice</a>` : ""}</td>
+        <td>${formatMoney(Number(expense.amount || 0))}${monthTag}</td>
+        <td>${invoiceUrl ? `<a href="${escapeHtml(invoiceUrl)}" target="_blank" rel="noreferrer">Invoice</a>` : kind === "recurring" ? "No invoice" : ""}</td>
         ${editActions(kind, expense._id, { readOnly: options.readOnly })}
       </tr>`
     })
@@ -880,8 +887,8 @@ function expensesTable(
 
   return `
     <h2>${escapeHtml(title)}</h2>
-    <div class="table-wrap">
-      <table>
+    <div class="table-wrap${recurringTable ? " recurring-charges" : ""}">
+      <table${recurringTable ? ` class="recurring-charges-table"` : ""}>
         <thead><tr>${includeProperty ? "<th>Property</th>" : ""}<th>Type</th><th>Note</th><th>Vendor</th><th>Amount</th><th>Invoice</th>${options.readOnly ? "" : "<th>Actions</th>"}</tr></thead>
         <tbody>${body || `<tr><td colspan="${columnCount}">No ${escapeHtml(title.toLowerCase())} found.</td></tr>`}</tbody>
       </table>
@@ -992,13 +999,14 @@ function chargesForYear(
         charges.push({
           _id: charge.id || `override:${index}:${periodYear}-${month}`,
           ownerId: String(owner._id || owner.id || ""),
-          property: charge.property || "Recurring",
+          property: storedChargeProperty(charge.property),
           type: charge.label,
           amount: Number(charge.amount || 0),
           month,
           year: periodYear,
           vendor: "Recurring",
-          notes: "Charge for this month"
+          notes: "Charge for this month",
+          monthOnlyLabel: monthLabels[month - 1] || "This month"
         });
       });
     } else {
@@ -1019,13 +1027,14 @@ function overrideRecurring(
   return lines.map<ExpenseLike>((charge, index) => ({
     _id: charge.id || `override:${index}:${year}-${month}`,
     ownerId: String(owner._id || owner.id || ""),
-    property: charge.property || "Recurring",
+    property: storedChargeProperty(charge.property),
     type: charge.label,
     amount: Number(charge.amount || 0),
     month,
     year,
     vendor: "Recurring",
-    notes: "Charge for this month"
+    notes: "Charge for this month",
+    monthOnlyLabel: monthLabels[month - 1] || "This month"
   }));
 }
 

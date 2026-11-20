@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { linesForMonth } from "@/lib/locked-statements";
 import { buildOwnerReport } from "@/lib/reporting/reports";
-import { applyMonthChargeChange, settingsChargesForMonth } from "@/lib/statement-month-charges";
+import { applyMonthChargeChange, settingsChargesForMonth, storedChargeProperty } from "@/lib/statement-month-charges";
 import type { AppSettings, OwnerLike } from "@/lib/types";
 
 const settings: AppSettings = { guestyCacheTtlMinutes: 30, defaultCleaningCaps: [] };
@@ -21,7 +21,7 @@ function sampleOwner(): OwnerLike {
   };
 }
 
-function statement(owner: OwnerLike, month: number, recurringOverride?: { id?: string; label: string; amount: number }[]) {
+function statement(owner: OwnerLike, month: number, recurringOverride?: { id?: string; label: string; amount: number; property?: string }[]) {
   return buildOwnerReport(owner, [], [], settings, {
     reportKey: "statement",
     month,
@@ -85,6 +85,52 @@ describe("statement month charges", () => {
     assert.equal(statement(owner, 12).summary.recurringCharges, 80);
     assert.equal(statement(owner, 10).summary.recurringCharges, 80);
     assert.equal(statement(owner, 11, edited).summary.recurringCharges, 55);
+  });
+
+  it("keeps a charge on no property unless the editor chooses one", () => {
+    const owner = sampleOwner();
+    owner.properties = ["Harbor North", "Harbor South"];
+    const november = settingsChargesForMonth(owner, 2026, 11);
+    assert.equal(november[0].property, "");
+    assert.equal(storedChargeProperty("Recurring"), "");
+    assert.equal(storedChargeProperty("No property"), "");
+
+    const resaved = applyMonthChargeChange(november, {
+      id: november[0].id,
+      label: "Pool care",
+      amount: 100,
+      property: ""
+    });
+    assert.equal(resaved[0].property, "");
+    const placeholder = applyMonthChargeChange(november, {
+      id: november[0].id,
+      label: "Pool care",
+      amount: 100,
+      property: "Recurring"
+    });
+    assert.equal(placeholder[0].property, "");
+    const named = applyMonthChargeChange(november, {
+      id: november[0].id,
+      label: "Pool care",
+      amount: 40,
+      property: "Harbor North"
+    });
+    assert.equal(named[0].property, "Harbor North");
+    const amountOnly = applyMonthChargeChange(named, { id: named[0].id, label: "Pool care", amount: 40 });
+    assert.equal(amountOnly[0].property, "Harbor North");
+
+    const plain = statement(owner, 11);
+    assert.match(plain.html, /data-charge-property=""/);
+    assert.match(plain.html, />No property<\/td>\s*<td>Pool care<\/td>/);
+    assert.doesNotMatch(plain.html, /Harbor North/);
+    assert.doesNotMatch(plain.html, /November only/);
+
+    const monthOnly = statement(owner, 11, [{ id: november[0].id, label: "Pool care", amount: 40, property: "" }]);
+    assert.match(monthOnly.html, /November only/);
+    assert.match(monthOnly.html, />No property</);
+    const assigned = statement(owner, 11, [{ id: november[0].id, label: "Pool care", amount: 40, property: "Harbor North" }]);
+    assert.match(assigned.html, />Harbor North<\/td>\s*<td>Pool care<\/td>/);
+    assert.match(assigned.html, /data-charge-property="Harbor North"/);
   });
 
   it("does not write statement edits back to the owner record", () => {
