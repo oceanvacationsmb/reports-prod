@@ -148,6 +148,13 @@ const propertySchema = new Schema(
   {
     name: { type: String, required: true, unique: true, trim: true },
     reportAddress: { type: String, default: "", trim: true },
+    street: { type: String, default: "", trim: true },
+    city: { type: String, default: "", trim: true },
+    state: { type: String, default: "", trim: true },
+    postalCode: { type: String, default: "", trim: true },
+    managedFrom: { type: String, default: "", trim: true },
+    managedTo: { type: String, default: "", trim: true },
+    jurisdictionId: { type: String, default: "", trim: true },
     municipality: { type: String, default: "", trim: true },
     taxFlags: { type: taxFlagsSchema, default: () => ({}) }
   },
@@ -264,7 +271,9 @@ const lockedStatementSchema = new Schema(
     lockedBy: { type: String, default: "" },
     backfilled: { type: Boolean, default: false },
     sourceKind: { type: String, default: "" },
-    sourceRef: { type: String, default: "" }
+    sourceRef: { type: String, default: "" },
+    unlockedAt: { type: Date, default: null },
+    unlockedBy: { type: String, default: "" }
   },
   { versionKey: false }
 );
@@ -298,5 +307,55 @@ export const GuestyCache: any = models.GuestyCache || mongoose.model("GuestyCach
 export const ReservationOverride: any = models.ReservationOverride || mongoose.model("ReservationOverride", reservationOverrideSchema);
 export const ReservationSeen: any = models.ReservationSeen || mongoose.model("ReservationSeen", reservationSeenSchema);
 export const Setting: any = models.Setting || mongoose.model("Setting", settingSchema);
+const statementSnapshotSchema = new Schema(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: "Owner", required: true, index: true },
+    year: { type: Number, required: true },
+    month: { type: Number, required: true },
+    shareId: { type: String, required: true, unique: true },
+    periodLabel: { type: String, default: "" },
+    htmlSnapshot: { type: String, required: true },
+    recurring: { type: [statementLineSchema], default: [] },
+    expenses: { type: [statementExpenseLineSchema], default: [] },
+    totals: { type: statementTotalsSchema, required: true },
+    depositRecorded: { type: Boolean, default: true },
+    lockedAt: { type: Date, default: Date.now },
+    lockedBy: { type: String, default: "" },
+    archivedAt: { type: Date, default: Date.now }
+  },
+  { versionKey: false }
+);
+
+statementSnapshotSchema.index({ ownerId: 1, year: 1, month: 1 });
+
+const taxJurisdictionSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    slug: { type: String, required: true, unique: true, trim: true },
+    formKind: { type: String, enum: ["georgetown", "surfside"], required: true },
+    accountNumber: { type: String, default: "" },
+    federalId: { type: String, default: "" },
+    businessName: { type: String, default: "" },
+    ownerName: { type: String, default: "" },
+    street: { type: String, default: "" },
+    city: { type: String, default: "" },
+    state: { type: String, default: "" },
+    postalCode: { type: String, default: "" },
+    email: { type: String, default: "" },
+    accommodationRate: { type: Number, default: 0 },
+    hospitalityRate: { type: Number, default: 0 },
+    discountRate: { type: Number, default: 0 },
+    penaltyRatePerMonth: { type: Number, default: 0.05 },
+    signatureName: { type: String, default: "" },
+    position: { type: String, default: "" },
+    phone: { type: String, default: "" },
+    template: { type: Buffer, default: null },
+    templateFilename: { type: String, default: "" }
+  },
+  { timestamps: true, versionKey: false }
+);
+
 export const LockedStatement: any = models.LockedStatement || mongoose.model("LockedStatement", lockedStatementSchema);
 export const StatementAudit: any = models.StatementAudit || mongoose.model("StatementAudit", statementAuditSchema);
+export const StatementSnapshot: any = models.StatementSnapshot || mongoose.model("StatementSnapshot", statementSnapshotSchema);
+export const TaxJurisdiction: any = models.TaxJurisdiction || mongoose.model("TaxJurisdiction", taxJurisdictionSchema);

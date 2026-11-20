@@ -5,7 +5,8 @@ import { connectDb } from "@/lib/db";
 import { Expense, Owner, Property } from "@/lib/models";
 import { getGuestyReservations } from "@/lib/guesty";
 import { asPlain, fail, ok } from "@/lib/http";
-import { findFinalStatement, listFinalMonths, reportFromFinal, statementHistory } from "@/lib/locked-statement-store";
+import { listFinalMonths, reportFromFinal, statementAvailability, statementHistory } from "@/lib/locked-statement-store";
+import { normalizeBasis } from "@/lib/reporting/ten-ninety-nine";
 import { getSettings } from "@/lib/settings";
 import { reservationQueryForPeriod } from "@/lib/reporting/reservation-query";
 import { buildAllOwnersTaxReport, buildOwnerReport, buildSummaryReport, periodFromRequest } from "@/lib/reporting/reports";
@@ -91,15 +92,33 @@ export async function POST(req: NextRequest) {
     if (!owner) throw Object.assign(new Error("Owner not found."), { status: 404 });
 
     if (body.reportKey === "statement" && body.month && body.year) {
-      const finalStatement = await findFinalStatement(ownerId, body.year, body.month);
-      if (finalStatement) {
+      const availability = await statementAvailability(ownerId, body.year, body.month);
+      if (availability.locked) {
         const history = await statementHistory(ownerId, body.year, body.month);
         return ok({
-          report: reportFromFinal(finalStatement, owner.name),
+          report: reportFromFinal(availability.statement, owner.name),
           locked: true,
-          shareId: finalStatement.shareId,
-          lockedAt: finalStatement.lockedAt,
-          recurring: finalStatement.recurring,
+          previouslySent: true,
+          shareId: availability.statement.shareId,
+          lockedAt: availability.statement.lockedAt,
+          recurring: availability.statement.recurring,
+          history
+        });
+      }
+      if (availability.previouslySent) {
+        const rows = await loadOwnerRows(owner, { startDate: period.startDate, endDate: period.endDate, property: body.property });
+        const expenses = asPlain(await Expense.find({ ownerId }).lean()) as ExpenseLike[];
+        const properties = asPlain(await Property.find().lean()) as PropertyLike[];
+        const report = buildOwnerReport(owner, rows, expenses, settings, { ...body, readOnly: false }, properties);
+        const history = await statementHistory(ownerId, body.year, body.month);
+        return ok({
+          report,
+          locked: false,
+          previouslySent: true,
+          sentShareId: availability.sentShareId,
+          sentAt: availability.sentAt,
+          shareId: "",
+          recurring: [],
           history
         });
       }
@@ -111,9 +130,9 @@ export async function POST(req: NextRequest) {
     const lockedMonths = body.reportKey === "1099"
       ? await listFinalMonths(ownerId, body.year || new Date().getUTCFullYear())
       : undefined;
-    const report = buildOwnerReport(owner, rows, expenses, settings, { ...body, lockedMonths }, properties);
+    const report = buildOwnerReport(owner, rows, expenses, settings, { ...body, lockedMonths, tenNinetyNineBasis: normalizeBasis(settings.tenNinetyNineBasis) }, properties);
     if (body.reportKey === "statement" && body.month) {
-      return ok({ report, locked: false, shareId: "", recurring: [], history: [] });
+      return ok({ report, locked: false, previouslySent: false, shareId: "", recurring: [], history: [] });
     }
     return ok({ report });
   } catch (error) {

@@ -73,7 +73,8 @@ describe("GRI property address", () => {
       year: 2026
     }, properties);
     assert.equal(griPropertyAddress("NMB - 3104-2", properties, [stay("NMB - 3104-2", guestyAddress)]), properties[0].reportAddress);
-    assert.ok(report.html.includes("3104 North Ocean Blvd, North Myrtle Beach, SC 29582"));
+    assert.ok(report.html.includes("3104 North Ocean Blvd"));
+    assert.ok(report.html.includes("North Myrtle Beach, SC 29582"));
     assert.ok(report.html.includes("Booked through"));
     assert.ok(report.html.includes("Airbnb"));
     assert.equal(report.html.includes("gri-address-hint"), false);
@@ -102,7 +103,7 @@ describe("GRI property address", () => {
     assert.ok(report.html.includes("gri-address-hint"));
     assert.ok(report.html.includes("Settings &gt; Properties"));
     assert.equal(report.html.includes("Property address needed"), false);
-    assert.match(report.html, /<strong>NMB - 3104-2<\/strong>/);
+    assert.match(report.html, /<h1 class="gri-street">NMB - 3104-2<\/h1>/);
   });
 
   it("uses the report address saved on the exact name MB - Tuscan A", () => {
@@ -113,7 +114,8 @@ describe("GRI property address", () => {
       year: 2026
     }, [{ name: "MB - Tuscan A", reportAddress: address }]);
     assert.equal(griPropertyAddress("MB - Tuscan A", [{ name: "MB - Tuscan A", reportAddress: address }], []), address);
-    assert.ok(report.html.includes(address));
+    assert.ok(report.html.includes("1000 Example Drive"));
+    assert.ok(report.html.includes("Myrtle Beach, SC 29577"));
     assert.equal(report.html.includes("gri-address-hint"), false);
     assert.equal(report.title, `${address} GRI Report`);
   });
@@ -130,7 +132,8 @@ describe("GRI property address", () => {
       year: 2026
     }, properties);
     assert.equal(griPropertyAddress("MB - Tuscan A", properties, [stay("MB - Tuscan A")]), address);
-    assert.ok(report.html.includes(address));
+    assert.ok(report.html.includes("1000 Example Drive"));
+    assert.ok(report.html.includes("Myrtle Beach, SC 29577"));
     assert.equal(report.html.includes("gri-address-hint"), false);
   });
 

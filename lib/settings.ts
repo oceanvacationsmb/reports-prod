@@ -1,18 +1,25 @@
 import { connectDb } from "@/lib/db";
 import { Setting } from "@/lib/models";
-import type { AppSettings } from "@/lib/types";
+import type { AppSettings, TenNinetyNineBasis } from "@/lib/types";
 
 export const defaultSettings: AppSettings = {
   guestyCacheTtlMinutes: Number(process.env.DEFAULT_GUESTY_CACHE_TTL_MINUTES || 30),
-  defaultCleaningCaps: []
+  defaultCleaningCaps: [],
+  tenNinetyNineBasis: "ownerPayout"
 };
+
+function basis(value: unknown): TenNinetyNineBasis {
+  return value === "grossRents" ? "grossRents" : "ownerPayout";
+}
 
 export async function getSettings(): Promise<AppSettings> {
   await connectDb();
   const setting = await Setting.findOne({ key: "app" }).lean();
+  const stored = (setting?.value || {}) as AppSettings;
   return {
     ...defaultSettings,
-    ...(setting?.value || {})
+    ...stored,
+    tenNinetyNineBasis: basis(stored.tenNinetyNineBasis)
   };
 }
 

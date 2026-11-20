@@ -74,6 +74,13 @@ export type PropertyLike = {
   id?: string;
   name: string;
   reportAddress?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  managedFrom?: string;
+  managedTo?: string;
+  jurisdictionId?: string;
   municipality?: string;
   taxFlags?: Record<string, boolean>;
 };
@@ -136,7 +143,10 @@ export type CalculatedReservation = NormalizedReservation & {
   isOwnerStay: boolean;
 };
 
+export type TenNinetyNineBasis = "grossRents" | "ownerPayout";
+
 export type AppSettings = {
   guestyCacheTtlMinutes: number;
   defaultCleaningCaps: CleaningCap[];
+  tenNinetyNineBasis?: TenNinetyNineBasis;
 };

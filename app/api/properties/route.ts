@@ -8,6 +8,13 @@ import { asPlain, fail, ok } from "@/lib/http";
 const schema = z.object({
   name: z.string().min(1),
   reportAddress: z.string().optional().default(""),
+  street: z.string().optional().default(""),
+  city: z.string().optional().default(""),
+  state: z.string().optional().default(""),
+  postalCode: z.string().optional().default(""),
+  managedFrom: z.string().optional().default(""),
+  managedTo: z.string().optional().default(""),
+  jurisdictionId: z.string().optional().default(""),
   municipality: z.string().optional().default(""),
   taxFlags: z.object({
     SC: z.boolean().optional(),

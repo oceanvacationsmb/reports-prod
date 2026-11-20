@@ -2,7 +2,10 @@ import crypto from "crypto";
 import type { AppSettings, CalculatedReservation, ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike, ReportKey } from "@/lib/types";
 import { calculateReservation, pmcPercent } from "@/lib/reporting/formulas";
 import { sameProperty } from "@/lib/reporting/report-options";
-import { buildFinal1099, type FinalMonthInput } from "@/lib/locked-statements";
+import { type FinalMonthInput } from "@/lib/locked-statements";
+import { localityLine, postalAddressFromProperty, singleLineAddress } from "@/lib/reporting/property-address";
+import { buildAnnual1099, buildOwner1099, normalizeBasis, renderAnnual1099 } from "@/lib/reporting/ten-ninety-nine";
+import type { TenNinetyNineBasis } from "@/lib/types";
 
 export type ReportRequest = {
   reportKey: ReportKey;
@@ -17,6 +20,7 @@ export type ReportRequest = {
   hideZeroReservations?: boolean;
   recurringOverride?: { label: string; amount: number }[];
   lockedMonths?: FinalMonthInput[];
+  tenNinetyNineBasis?: TenNinetyNineBasis;
 };
 
 type ReportResult = {
@@ -406,6 +410,16 @@ function savedReportAddress(propertyName: string, properties: PropertyLike[]) {
   return ordered.map((item) => item.reportAddress?.trim() || "").find(Boolean) || "";
 }
 
+function griStoredProperty(propertyName: string, properties: PropertyLike[]) {
+  const matches = properties.filter((item) => sameProperty(item.name, propertyName));
+  const exactName = propertyName.trim().toLowerCase();
+  const ordered = [
+    ...matches.filter((item) => item.name.trim().toLowerCase() === exactName),
+    ...matches.filter((item) => item.name.trim().toLowerCase() !== exactName)
+  ];
+  return ordered.find((item) => item.street || item.city || item.state || item.postalCode || item.reportAddress?.trim()) || ordered[0];
+}
+
 export function griPropertyAddress(
   propertyName: string,
   properties: PropertyLike[],
@@ -704,29 +718,37 @@ function griReservationTable(rows: CalculatedReservation[]) {
   `;
 }
 
-function griReportDocument(property: string, propertyAddress: string, rows: CalculatedReservation[], year: number, periodLabel: string) {
+function griReportDocument(property: string, propertyAddress: string, rows: CalculatedReservation[], year: number, periodLabel: string, storedProperty?: PropertyLike) {
   const grossPayout = rows.reduce((sum, row) => sum + row.grossPayout, 0);
   const reportDate = new Date().toLocaleDateString("en-US");
-  const address = propertyAddress.trim();
-  const displayAddress = address || property;
+  const postal = postalAddressFromProperty({
+    street: storedProperty?.street,
+    city: storedProperty?.city,
+    state: storedProperty?.state,
+    postalCode: storedProperty?.postalCode,
+    reportAddress: propertyAddress || storedProperty?.reportAddress || ""
+  });
+  const street = postal.street;
+  const locality = localityLine(postal);
+  const savedAddress = propertyAddress.trim();
+  const displayAddress = singleLineAddress(postal) || savedAddress || property;
+  const hasAddress = Boolean(savedAddress || (street && street !== property));
 
+  const title = street || displayAddress || property;
   return `
     <article class="report-document gri-document">
       <header class="report-hero">
         <p>Ocean Vacations</p>
         <span class="gri-title-label">Gross Rental Income Report</span>
-        <h1>${escapeHtml(displayAddress)}</h1>
+        ${locality ? `<span class="gri-locality">${escapeHtml(locality)}</span>` : ""}
+        <h1 class="gri-street">${escapeHtml(title)}</h1>
         <span>${escapeHtml(periodLabel)}</span>
         <div class="report-hero-details">
           <span>oceanvacationsmb@gmail.com</span>
           <span>843-222-6516</span>
         </div>
       </header>
-      <section class="gri-property-card${address ? "" : " missing-address"}">
-        <span>Property Address</span>
-        <strong>${escapeHtml(displayAddress)}</strong>
-        ${address ? "" : `<small class="gri-address-hint">Add the official report address for ${escapeHtml(property)} in Settings &gt; Properties before sending this report.</small>`}
-      </section>
+      ${hasAddress ? "" : `<section class="gri-property-card missing-address"><small class="gri-address-hint">Add the street, city, state, and ZIP for ${escapeHtml(property)} in Settings &gt; Properties before sending this report.</small></section>`}
       <section class="metric-grid">
         <div class="metric"><span>Report Date</span><strong>${escapeHtml(reportDate)}</strong></div>
         <div class="metric"><span>Gross Payout</span><strong>${formatMoney(grossPayout)}</strong></div>
@@ -959,64 +981,35 @@ function overrideRecurring(owner: OwnerLike, request: ReportRequest, lines: { la
   }));
 }
 
-function final1099Metric(label: string, value: number) {
-  return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${formatMoney(value)}</strong></div>`;
+function final1099Body(finals: FinalMonthInput[], year: number, owner: OwnerLike, basis: TenNinetyNineBasis) {
+  const builtOwner = buildOwner1099({
+    ownerId: String(owner._id || owner.id || ""),
+    ownerName: owner.name || "Owner",
+    properties: owner.properties || [],
+    year,
+    finals,
+    basis
+  });
+  const report = buildAnnual1099(year, [builtOwner], basis);
+  const included = builtOwner.months.filter((row) => row.status === "final");
+  return {
+    built: {
+      totals: {
+        netAccommodation: centsOf(included, "netAccommodation"),
+        pmc: centsOf(included, "pmc"),
+        expenses: centsOf(included, "expenses"),
+        netToOwner: centsOf(included, "netToOwner")
+      },
+      missingMonths: builtOwner.months.filter((row) => row.status === "missing").map((row) => row.month)
+    },
+    includedCount: included.length,
+    reportingAmount: builtOwner.annualTotal,
+    html: renderAnnual1099(report)
+  };
 }
 
-function final1099Body(finals: FinalMonthInput[], year: number) {
-  const built = buildFinal1099(year, finals);
-  const included = built.months.filter((row) => row.final && row.depositRecorded);
-  const lockedCount = built.months.filter((row) => row.final).length;
-  const rows = built.months
-    .map((row) => {
-      const label = monthLabels[row.month - 1];
-      if (!row.final) {
-        return `<tr class="missing-final"><td>${escapeHtml(label)}</td><td class="missing-final" colspan="4"><span class="missing-final-copy">Not final, needs the sent statement</span> <a href="#statement-${row.month}" data-open-statement-month="${row.month}">Open ${escapeHtml(label)}</a></td></tr>`;
-      }
-      if (!row.depositRecorded) {
-        return `<tr><td>${escapeHtml(label)}</td><td colspan="3">Fees saved (${formatMoney(row.expenses)})</td><td>Deposit not recorded</td></tr>`;
-      }
-      return `
-      <tr>
-        <td data-label="Month">${escapeHtml(label)}</td>
-        <td data-label="Net accommodation">${formatMoney(row.netAccommodation)}</td>
-        <td data-label="PMC">${formatMoney(row.pmc)}</td>
-        <td data-label="Expenses">${formatMoney(row.expenses)}</td>
-        <td data-label="Net to owner">${formatMoney(row.netToOwner)}</td>
-      </tr>`;
-    })
-    .join("");
-  const totalBlock = lockedCount === 0
-    ? `<section class="ten-ninety-nine-total"><p>No final statements yet</p><p>Lock a month by emailing the statement or backfilling the sent statement.</p></section>`
-    : included.length > 0 && included.length < 12
-      ? `<section class="ten-ninety-nine-total"><p>Total from ${included.length} of 12 final months</p><div class="metric-grid">${final1099Metric("Net accommodation", built.totals.netAccommodation)}${final1099Metric("PMC", built.totals.pmc)}${final1099Metric("Expenses", built.totals.expenses)}${final1099Metric("Net to owner", built.totals.netToOwner)}</div></section>`
-      : "";
-  const missing = built.missingMonths.map((month) => monthLabels[month - 1]);
-  const incomplete = built.incompleteMonths.map((month) => monthLabels[month - 1]);
-  const notes = [
-    missing.length && included.length ? `${missing.length} months are not final, needs the sent statement.` : "",
-    incomplete.length
-      ? `Deposit not recorded: ${incomplete.join(", ")}. The saved fees stay on file, and that month stays out of the 1099 totals until the owner payout from the statement is saved.`
-      : "",
-    included.length === 12 ? "Every month has an emailed final statement." : ""
-  ]
-    .filter(Boolean)
-    .map((note) => `<p class="ten-ninety-nine-note">${escapeHtml(note)}</p>`)
-    .join("");
-  return {
-    built,
-    includedCount: included.length,
-    html: `
-      ${totalBlock}
-      <div class="table-wrap ten-ninety-nine-table">
-        <table>
-          <thead><tr><th>Month</th><th>Net Accommodation</th><th>PMC</th><th>Expenses</th><th>Net To Owner</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-      ${notes}
-    `
-  };
+function centsOf(rows: Array<{ netAccommodation: number; pmc: number; expenses: number; netToOwner: number }>, key: "netAccommodation" | "pmc" | "expenses" | "netToOwner") {
+  return Math.round(rows.reduce((sum, row) => sum + row[key], 0) * 100) / 100;
 }
 
 function calculateRows(rows: NormalizedReservation[], owner: OwnerLike, settings: AppSettings, request: ReportRequest) {
@@ -1131,7 +1124,8 @@ export function buildOwnerReport(
   if (request.reportKey === "gri") {
     const property = request.property || reportRows[0]?.property || rows[0]?.property || "Property";
     const officialAddress = griPropertyAddress(property, properties, reportRows);
-    const body = griReportDocument(property, officialAddress, reportRows, request.year || new Date().getUTCFullYear(), period.label);
+    const storedProperty = griStoredProperty(property, properties);
+    const body = griReportDocument(property, officialAddress, reportRows, request.year || new Date().getUTCFullYear(), period.label, storedProperty);
     return {
       title: officialAddress ? `${officialAddress} GRI Report` : "Gross Rental Income Report",
       periodLabel: period.label,
@@ -1142,7 +1136,7 @@ export function buildOwnerReport(
 
   if (request.reportKey === "1099" && Array.isArray(request.lockedMonths)) {
     const year = request.year || new Date().getUTCFullYear();
-    const finalReport = final1099Body(request.lockedMonths, year);
+    const finalReport = final1099Body(request.lockedMonths, year, owner, normalizeBasis(request.tenNinetyNineBasis));
     const headline = {
       netAccommodation: finalReport.built.totals.netAccommodation,
       pmc: finalReport.built.totals.pmc,

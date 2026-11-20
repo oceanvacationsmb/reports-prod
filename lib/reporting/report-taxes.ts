@@ -73,7 +73,7 @@ function includeStay(row: CalculatedReservation) {
 // Host gross payout minus collected taxes. A stay with no tax contributes nothing.
 // NMB - 3104-2 for October 2026 is 3343.56 - 335.56 = 3008.00.
 // GC - 1463 for the same month is 3458.56 - 370.56 = 3088.00.
-function amountToReport(row: CalculatedReservation) {
+export function amountToReport(row: CalculatedReservation) {
   if (row.taxes <= 0) return 0;
   return Math.max(0, cents(row.grossPayout - row.taxes));
 }
@@ -199,4 +199,64 @@ export function buildPropertyTaxReport(
     totalTax: cents(groups.reduce((sum, group) => sum + group.totalTax, 0)),
     groups
   };
+}
+
+export type FilingPropertyActivity = {
+  property: string;
+  amountToReport: number;
+  longStay30: number;
+  longStay90: number;
+};
+
+// Same stay filters and amountToReport figure as the tax report, plus the
+// long-stay portions the jurisdiction forms subtract on their own lines.
+export function buildFilingActivity(
+  owners: OwnerLike[],
+  reservationsByOwner: Map<string, NormalizedReservation[]>,
+  settings: AppSettings,
+  month: number,
+  year: number,
+  properties: PropertyLike[] = []
+): { periodLabel: string; rows: FilingPropertyActivity[] } {
+  const report = buildPropertyTaxReport(owners, reservationsByOwner, settings, month, year, properties);
+  const period = periodFromRequest({ reportKey: "statement", month, year });
+  const orderedOwners = owners
+    .filter((owner) => !isAggregateOwner(owner))
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name) || String(left._id || left.id || "").localeCompare(String(right._id || right.id || "")));
+  const seen = new Set<string>();
+  const extra = new Map<string, { longStay30: number; longStay90: number }>();
+
+  for (const owner of orderedOwners) {
+    const ownerId = String(owner._id || owner.id || "");
+    const rows = (reservationsByOwner.get(ownerId) || [])
+      .filter((row) => inPeriod(row, period.startDate, period.endDate))
+      .map((row) => calculateReservation(row, owner, settings, { calculationSource: "reports" }))
+      .filter(includeStay);
+    for (const row of rows) {
+      const key = stayKey(row);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const proceeds = amountToReport(row);
+      if (proceeds <= 0 || row.nights < 30) continue;
+      const propertyName = catalogProperty(properties, row.property)?.name || row.property || "Unassigned";
+      const current = extra.get(propertyName.toLowerCase()) || { longStay30: 0, longStay90: 0 };
+      current.longStay30 += proceeds;
+      if (row.nights >= 90) current.longStay90 += proceeds;
+      extra.set(propertyName.toLowerCase(), current);
+    }
+  }
+
+  const rows = report.groups.flatMap((group) =>
+    group.rows.map((row) => {
+      const longStay = extra.get(row.property.toLowerCase());
+      return {
+        property: row.property,
+        amountToReport: row.amountToReport,
+        longStay30: cents(Math.min(row.amountToReport, longStay?.longStay30 || 0)),
+        longStay90: cents(Math.min(row.amountToReport, longStay?.longStay90 || 0))
+      };
+    })
+  );
+  return { periodLabel: report.periodLabel, rows };
 }

@@ -1,6 +1,6 @@
 :root {
   --ink: #102622;
-  --muted: #687a78;
+  --muted: #4a5c5a;
   --paper: #f4f0e8;
   --panel: #fffdfa;
   --panel-soft: #f8f5ef;
@@ -615,6 +615,16 @@ select:disabled {
   margin-top: 8px;
 }
 
+.history-dash,
+.history-unchanged {
+  color: #4a5c5a;
+  font-weight: 650;
+}
+
+.history-unchanged {
+  margin: 8px 0 0;
+}
+
 .ten-ninety-nine-total {
   display: grid;
   gap: 8px;
@@ -629,6 +639,34 @@ select:disabled {
 .ten-ninety-nine-total p:first-child {
   font-size: 1.05rem;
   font-weight: 800;
+}
+
+.ten-ninety-nine-amount {
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.ten-ninety-nine-property {
+  margin-top: 18px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ten-ninety-nine-property h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.ten-ninety-nine-property-total {
+  margin: 4px 0 8px;
+  font-weight: 800;
+}
+
+.ten-ninety-nine-property-table {
+  width: 100%;
+  max-width: 28rem;
 }
 
 .missing-final,
@@ -2040,16 +2078,17 @@ select:disabled {
     white-space: normal;
   }
 
-  .ten-ninety-nine-table tr:not(.missing-final) td[data-label] {
+  .ten-ninety-nine-table tr td[data-label] {
     display: flex;
     justify-content: space-between;
     gap: 12px;
   }
 
-  .ten-ninety-nine-table tr:not(.missing-final) td[data-label]::before {
+  .ten-ninety-nine-table tr td[data-label]::before {
     content: attr(data-label);
     color: #4a5c5a;
     font-size: 0.72rem;
+    font-weight: 650;
     text-transform: uppercase;
   }
 }
@@ -3644,4 +3683,310 @@ tr:last-child td {
     letter-spacing: 0.03em;
     text-transform: uppercase;
   }
+}
+
+.gri-document .gri-locality {
+  display: block;
+  margin: 0 0 6px;
+  color: #4a5c5a;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.gri-document .report-hero h1.gri-street {
+  margin-top: 0;
+}
+
+.tax-form-panel,
+.tax-form-results,
+.tax-group,
+.tax-lines-block,
+.tax-form-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tax-form-panel {
+  margin-top: 24px;
+}
+
+.tax-form-panel .table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.tax-form-panel .helper-line,
+.tax-form-panel .tax-plain,
+.tax-form-panel .empty-state {
+  overflow-wrap: break-word;
+}
+
+.tax-form-panel .primary-action,
+.tax-form-panel .secondary-action {
+  max-width: 100%;
+}
+
+.tax-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.tax-form-actions label {
+  width: 148px;
+  flex: 0 0 148px;
+}
+
+.tax-form-actions .primary-action {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0 18px;
+}
+
+@media (max-width: 600px) {
+  .tax-form-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .tax-form-actions label {
+    width: 100%;
+    flex: none;
+  }
+
+  .tax-form-actions .primary-action,
+  .tax-form-panel .secondary-action,
+  .tax-form-panel .message .secondary-action {
+    width: 100%;
+    height: auto;
+    min-height: 46px;
+    padding: 10px 14px;
+    white-space: normal;
+  }
+
+  .tax-form-panel .message {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tax-sheet .tax-form-panel .tax-lines,
+  .tax-sheet .tax-form-panel .tax-lines tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .tax-form-panel .tax-lines thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .tax-form-panel .tax-lines tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 2px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tax-sheet .tax-form-panel .tax-lines td {
+    display: block;
+    width: auto !important;
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    text-align: left;
+  }
+
+  .tax-form-panel .tax-lines td:nth-child(1) {
+    font-weight: 800;
+  }
+
+  .tax-form-panel .tax-lines td:nth-child(3) {
+    grid-column: 1 / -1;
+    color: #4a5c5a;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .tax-form-panel .tax-lines tr.tax-subtotal td:nth-child(3) {
+    font-weight: 650;
+  }
+
+  .tax-form-panel .tax-lines td:nth-child(4) {
+    grid-column: 1 / -1;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .tax-form-panel .tax-schedule thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .tax-form-panel .tax-schedule,
+  .tax-form-panel .tax-schedule tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .tax-form-panel .tax-schedule tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    row-gap: 2px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tax-sheet .tax-form-panel .tax-schedule td {
+    display: block;
+    width: auto !important;
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(1) {
+    grid-column: 1 / -1;
+    font-weight: 800;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(2) {
+    grid-column: 1 / -1;
+    color: #4a5c5a;
+    font-size: 13px;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(3),
+  .tax-form-panel .tax-schedule td:nth-child(4) {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(3)::before,
+  .tax-form-panel .tax-schedule td:nth-child(4)::before {
+    content: "Taxable revenue";
+    float: left;
+    margin-right: 0.35em;
+    color: #4a5c5a;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .tax-form-panel .tax-schedule td:nth-child(4)::before {
+    content: "Tax";
+  }
+}
+
+.tax-form-panel .tax-lines,
+.tax-form-panel .tax-schedule {
+  table-layout: fixed;
+  width: 100%;
+  max-width: 100%;
+}
+
+.tax-sheet .tax-form-panel .tax-schedule th,
+.tax-sheet .tax-form-panel .tax-schedule td {
+  width: auto;
+  text-align: left;
+}
+
+.tax-sheet .tax-form-panel .tax-schedule th:nth-child(n + 3),
+.tax-sheet .tax-form-panel .tax-schedule td:nth-child(n + 3) {
+  text-align: right;
+  width: 22%;
+}
+
+.tax-sheet .tax-form-panel .tax-lines th:first-child,
+.tax-sheet .tax-form-panel .tax-lines td:first-child {
+  width: 14%;
+  text-align: left;
+}
+
+.tax-sheet .tax-form-panel .tax-lines th:nth-child(2),
+.tax-sheet .tax-form-panel .tax-lines td:nth-child(2),
+.tax-sheet .tax-form-panel .tax-lines th:nth-child(3),
+.tax-sheet .tax-form-panel .tax-lines td:nth-child(3) {
+  width: auto;
+  text-align: left;
+}
+
+.tax-lines-block {
+  margin-top: 16px;
+}
+
+.tax-lines-block h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.tax-lines tr.tax-subtotal td {
+  font-weight: 800;
+}
+
+.tax-total-due {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 12px;
+  margin: 12px 0;
+  color: var(--ink);
+}
+
+.tax-total-due strong {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-plain,
+.tax-how {
+  max-width: 70ch;
+  color: #4a5c5a;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.tax-how {
+  margin: 8px 0 12px;
+}
+
+.tax-how summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.tax-how p {
+  margin: 8px 0 0;
+}
+
+.tax-mode {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.tax-sheet .tax-form-panel .tax-lines th:nth-child(4),
+.tax-sheet .tax-form-panel .tax-lines td:nth-child(4) {
+  width: 22%;
+  text-align: right;
+}
+
+.tax-form-results {
+  display: grid;
+  gap: 18px;
 }

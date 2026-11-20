@@ -6,7 +6,8 @@ import { getSettings, saveSettings } from "@/lib/settings";
 
 const schema = z.object({
   guestyCacheTtlMinutes: z.coerce.number().min(1).max(1440).optional(),
-  defaultCleaningCaps: z.array(z.object({ property: z.string().optional(), maxAmount: z.coerce.number() })).optional()
+  defaultCleaningCaps: z.array(z.object({ property: z.string().optional(), maxAmount: z.coerce.number() })).optional(),
+  tenNinetyNineBasis: z.enum(["grossRents", "ownerPayout"]).optional()
 });
 
 export async function GET(req: NextRequest) {

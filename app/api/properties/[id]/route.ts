@@ -8,6 +8,13 @@ import { asPlain, fail, ok } from "@/lib/http";
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
   reportAddress: z.string().optional(),
+  street: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postalCode: z.string().optional(),
+  managedFrom: z.string().optional(),
+  managedTo: z.string().optional(),
+  jurisdictionId: z.string().optional(),
   municipality: z.string().optional(),
   taxFlags: z.object({
     SC: z.boolean().optional(),
