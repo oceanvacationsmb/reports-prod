@@ -133,7 +133,12 @@ export function JurisdictionSettings() {
     setBusy("save");
     setError("");
     setNotice("");
-    const slug = form.slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    if (!form.name.trim()) {
+      setError("Enter a jurisdiction name.");
+      setBusy("");
+      return;
+    }
+    const slug = (form.slug.trim() || form.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const body = {
       ...form,
       slug,
@@ -192,10 +197,16 @@ export function JurisdictionSettings() {
         <FileMark />
         <h2>{editingId ? "Edit jurisdiction" : "Tax jurisdictions"}</h2>
       </div>
-      <p className="helper-line">Account numbers, Federal ID, and the official PDF stay in the database. They are not part of the app code.</p>
+      <p className="helper-line">Account numbers, Federal ID, and the official PDF stay in the database. Saved privately. Only admins can see them.</p>
+      <p className="tax-mode">{editingId ? `Editing ${form.name || "this jurisdiction"}.` : "Adding a new jurisdiction."}</p>
+      {editingId && (
+        <button className="text-action" type="button" onClick={() => { setEditingId(""); setForm(emptyForm); setTemplateName(""); setError(""); }}>
+          Add a new one instead
+        </button>
+      )}
       {busy === "load" && <p className="helper-line" role="status">Loading jurisdictions...</p>}
       {error && <div className="message error" role="alert"><span>{error}</span></div>}
-      {notice && <p className="helper-line" role="status">{notice}</p>}
+      {notice && <p className="success-line" role="status">{notice}</p>}
       <label>
         Form
         <select
@@ -215,7 +226,7 @@ export function JurisdictionSettings() {
         </select>
       </label>
       {field("name", "Jurisdiction name")}
-      {field("slug", "Slug")}
+      {field("slug", "Short ID used in file names")}
       {field("accountNumber", "Account or customer number")}
       {field("federalId", "Federal ID")}
       {field("businessName", "Business name")}

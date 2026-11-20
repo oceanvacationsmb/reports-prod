@@ -28,7 +28,7 @@ export type JurisdictionTaxResult = {
 };
 
 export const SURFSIDE_HOSPITALITY_CONCLUSION =
-  "Surfside Beach's 1% hospitality fee applies to transient accommodation rentals. Ordinance 21-0928 imposes that fee on gross proceeds from rooms and lodgings furnished to transients, and the official form puts those proceeds on Part I line 2, adds line 2 into line 4, and computes line 5 as line 4 times 1%. Food and admission lines stay at 0. Part II line 9 is the separate 0.5% accommodations tax on line 2. A stay of 90 or more continuous nights is not transient under that ordinance, but the form has no line for it, so line 2 stays equal to the tax report and any 90-night amount is called out in the preview.";
+  "Stays of 90 or more nights aren't transient, but the form has no line for them, so line 2 matches the tax report.";
 
 export function cents(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;

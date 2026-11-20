@@ -150,30 +150,38 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
                   </table>
                 </div>
               )}
-              <div className="table-wrap">
-                <table className="tax-lines">
-                  <thead>
-                    <tr>
-                      <th>Line</th>
-                      <th>Description</th>
-                      <th>Math</th>
-                      <th>Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {item.result.lines.map((line) => (
-                      <tr key={line.line}>
-                        <td>{line.line === "total" ? "Total" : line.line}</td>
-                        <td>{line.label}</td>
-                        <td>{line.formula}</td>
-                        <td>{money(line.amount)}</td>
+              <div className="tax-lines-block">
+                <h3>Form lines</h3>
+                <div className="table-wrap">
+                  <table className="tax-lines">
+                    <thead>
+                      <tr>
+                        <th>Line</th>
+                        <th>Description</th>
+                        <th>Math</th>
+                        <th>Amount</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {item.result.lines.map((line) => (
+                        <tr key={line.line} className={emphasizedLine(line.line) ? "tax-subtotal" : undefined}>
+                          <td>{line.line === "total" ? "Total" : line.line}</td>
+                          <td>{line.label}</td>
+                          <td>{line.formula}</td>
+                          <td>{money(line.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <p className="helper-line">Total due {money(item.result.totalDue)}.</p>
-              {item.note && <p className="ten-ninety-nine-note">{item.note}</p>}
+              <p className="tax-total-due"><span>Total due</span><strong>{money(item.result.totalDue)}</strong></p>
+              <p className="tax-plain">{plainCalculation(item.settings.formKind)}</p>
+              <details className="tax-how">
+                <summary>How {item.settings.name} calculates this</summary>
+                <p>{detailCalculation(item.settings.formKind, hospitality)}</p>
+                {item.note && <p>{item.note}</p>}
+              </details>
               <button
                 className="secondary-action"
                 type="button"
@@ -185,11 +193,24 @@ export function TaxFormsPanel({ month, year }: { month: string; year: string }) 
               </button>
             </article>
           ))}
-          {hospitality && filing.jurisdictions.some((item) => item.settings.formKind === "surfside") && (
-            <p className="ten-ninety-nine-note">{hospitality}</p>
-          )}
         </div>
       )}
     </section>
   );
+}
+
+function emphasizedLine(line: string) {
+  return line === "4" || line === "8" || line === "12" || line === "total";
+}
+
+function plainCalculation(kind: string) {
+  if (kind === "surfside") return "Food and admission lines stay at 0. Line 2 matches the tax report.";
+  return "Food lines stay at 0. Line 5 matches the tax report.";
+}
+
+function detailCalculation(kind: string, surfsideDetail: string) {
+  if (kind === "surfside") {
+    return surfsideDetail || "Stays of 90 or more nights aren't transient, but the form has no line for them, so line 2 matches the tax report.";
+  }
+  return "Stays of 30 nights or more are removed on line 6. This form has no timely-filing discount.";
 }

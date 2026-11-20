@@ -193,6 +193,7 @@ function fillSurfside(form: Form, font: PDFFont, filled: FilledReturn) {
   put("Account Number", settings.accountNumber, true);
   put("Property location if different from above", propertyLocation(filled.rows));
   put("Period Ending or Quarter Ending", periodEndingDate(filled.year, filled.month), true);
+  // Period Dates is labeled for 28-day filers only. A monthly return uses Period Ending.
   put("Gross Proceeds From Sale of Food or Beverages", amount(result, "1"), true);
   put("Gross Proceeds from Rental of Transient Accommodations", amount(result, "2"), true);
   put("Gross Proceeds from Paid Admissions andor Amusements 1", amount(result, "3"), true);

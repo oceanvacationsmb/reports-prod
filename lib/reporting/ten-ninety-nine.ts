@@ -140,9 +140,18 @@ export function buildAnnual1099(year: number, owners: Annual1099Owner[], basis: 
   };
 }
 
+function missingFinalCopy(count: number) {
+  if (count === 1) return "1 month isn't final yet. It needs a sent statement.";
+  return `${count} months aren't final yet. Each needs a sent statement.`;
+}
+
+function dashCell(label: string) {
+  return `<td class="missing-final" data-label="${label}">-</td>`;
+}
+
 function monthCells(row: Annual1099Month) {
   if (row.status === "missing") {
-    return `<td class="missing-final" colspan="6"><span class="missing-final-copy">Not final, needs the sent statement</span></td>`;
+    return `<td class="missing-final" data-label="1099 amount">Not final</td>${dashCell("Net accommodation")}${dashCell("PMC")}${dashCell("Expenses")}${dashCell("Net to owner")}${dashCell("Statement")}`;
   }
   if (row.status === "deposit-missing") {
     return `<td class="missing-final" colspan="6"><span class="missing-final-copy">Deposit not recorded. Saved fees ${escapeHtml(money(row.expenses))} stay on file and this month is not in the 1099 total.</span></td>`;
@@ -167,10 +176,10 @@ export function renderAnnual1099(report: Annual1099Report) {
         owner.finalCount === 0
           ? `<section class="ten-ninety-nine-total"><p>No final statements yet</p><p>Lock a month by emailing the statement or backfilling the sent statement.</p></section>`
           : owner.finalCount < 12
-            ? `<section class="ten-ninety-nine-total"><p>Total from ${owner.finalCount} of 12 final months</p><p>${escapeHtml(money(owner.annualTotal))}</p></section>`
-            : `<section class="ten-ninety-nine-total"><p>${escapeHtml(money(owner.annualTotal))}</p></section>`;
+            ? `<section class="ten-ninety-nine-total"><p>Total from ${owner.finalCount} of 12 final months</p><p class="ten-ninety-nine-amount">${escapeHtml(money(owner.annualTotal))}</p></section>`
+            : `<section class="ten-ninety-nine-total"><p>Year total</p><p class="ten-ninety-nine-amount">${escapeHtml(money(owner.annualTotal))}</p></section>`;
       const notes = [
-        owner.missingMonths.length && owner.finalCount ? `${owner.missingMonths.length} months are not final, needs the sent statement.` : "",
+        owner.missingMonths.length && owner.finalCount ? missingFinalCopy(owner.missingMonths.length) : "",
         owner.finalCount === 12 ? "Every month has an emailed final statement." : ""
       ]
         .filter(Boolean)
@@ -223,7 +232,7 @@ export function annual1099Rows(report: Annual1099Report) {
         owner.ownerName,
         owner.properties.join("; "),
         month.label,
-        month.status === "final" ? "Final" : month.status === "deposit-missing" ? "Deposit not recorded" : "Not final - no locked statement",
+        month.status === "final" ? "Final" : month.status === "deposit-missing" ? "Deposit not recorded" : "Not final",
         month.reportingAmount == null ? "" : month.reportingAmount.toFixed(2),
         report.basisLabel,
         month.status === "missing" ? "" : month.netAccommodation.toFixed(2),

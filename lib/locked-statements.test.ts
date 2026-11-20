@@ -243,8 +243,8 @@ describe("1099 from emailed finals", () => {
       ]
     });
     assert.match(report.html, /Total from 1 of 12 final months/);
-    assert.match(report.html, /11 months are not final, needs the sent statement/);
-    assert.match(report.html, /Not final, needs the sent statement/);
+    assert.match(report.html, /11 months aren't final yet\. Each needs a sent statement\./);
+    assert.match(report.html, /Not final/);
     assert.equal(report.html.includes("Open January"), false);
     assert.match(report.html, /\$12,345\.26/);
     assert.equal(report.html.includes("$340.00"), false);
@@ -307,7 +307,7 @@ describe("1099 from emailed finals", () => {
         }
       ]
     });
-    assert.match(report.html, /Not final, needs the sent statement/);
+    assert.match(report.html, /Not final/);
     assert.equal(report.html.includes("Open January"), false);
     assert.match(report.html, /\$12,345\.26/);
     assert.equal(report.html.includes("$999.00"), false);
@@ -360,7 +360,7 @@ describe("1099 from emailed finals", () => {
     );
     assert.match(report.html, /No final statements yet/);
     assert.match(report.html, /Lock a month by emailing the statement or backfilling the sent statement/);
-    assert.match(report.html, /Not final, needs the sent statement/);
+    assert.match(report.html, /Not final/);
     assert.equal(report.html.includes("Total from"), false);
     assert.equal(report.html.includes("$8,888.77"), false);
     assert.equal(report.html.includes("$0.00"), false);

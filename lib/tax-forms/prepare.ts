@@ -1,7 +1,7 @@
 import type { FilingPropertyActivity } from "@/lib/reporting/report-taxes";
 import { addressIsComplete, localityLine, postalAddressFromProperty, singleLineAddress, type PostalAddress } from "@/lib/reporting/property-address";
 import type { PropertyLike } from "@/lib/types";
-import { allocateCents, calculateGeorgetown, calculateSurfside, cents, SURFSIDE_HOSPITALITY_CONCLUSION, type JurisdictionTaxResult, type TaxFormKind, type TaxRates } from "@/lib/tax-forms/calculate";
+import { allocateCents, calculateGeorgetown, calculateSurfside, cents, type JurisdictionTaxResult, type TaxFormKind, type TaxRates } from "@/lib/tax-forms/calculate";
 import { propertyActiveInMonth } from "@/lib/tax-forms/period";
 
 export type JurisdictionSettings = {
@@ -142,7 +142,6 @@ export function prepareFiling(input: {
     });
     const incomplete = rows.filter((row) => !addressIsComplete(row.address)).map((row) => row.property);
     const note = [
-      settings.formKind === "surfside" ? SURFSIDE_HOSPITALITY_CONCLUSION : "",
       longStay90 > 0 ? `Stays of 90 or more nights total ${longStay90.toFixed(2)} and remain inside the tax-report amount.` : "",
       incomplete.length ? `Add city, state, and ZIP for ${incomplete.join(", ")} on the property record.` : ""
     ]

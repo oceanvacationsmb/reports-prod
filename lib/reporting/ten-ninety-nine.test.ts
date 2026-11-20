@@ -53,7 +53,7 @@ describe("1099 reconciliation", () => {
       ]
     });
     assert.match(htmlReport.html, /Owner payout on the locked statement/);
-    assert.match(htmlReport.html, /Not final, needs the sent statement/);
+    assert.match(htmlReport.html, />Not final</);
     assert.match(htmlReport.html, /Properties: Cottage/);
     assert.equal(htmlReport.html.includes("$999.00"), false);
     assert.equal(htmlReport.html.includes("$0.00"), false);
@@ -79,7 +79,7 @@ describe("1099 reconciliation", () => {
     const file = workbookXlsx(annual1099Rows(annual));
     const text = file.toString("utf8");
     assert.match(text, /150\.00/);
-    assert.match(text, /Not final - no locked statement/);
+    assert.match(text, /Not final/);
     assert.match(text, /Gross rents/);
     assert.equal(text.includes("999"), false);
   });

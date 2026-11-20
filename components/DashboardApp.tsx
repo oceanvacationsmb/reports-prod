@@ -959,6 +959,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   }
 
+  function totalsChanged(entry: StatementHistoryItem) {
+    if (!entry.beforeTotals || !entry.afterTotals) return false;
+    return entry.beforeTotals.ownerPayout !== entry.afterTotals.ownerPayout || entry.beforeTotals.netAccommodation !== entry.afterTotals.netAccommodation;
+  }
+
   function changedHistoryLines(entry: StatementHistoryItem) {
     const labels = [...new Set([...entry.beforeRecurring.map((line) => line.label), ...entry.afterRecurring.map((line) => line.label)])];
     return labels.flatMap((label) => {
@@ -1963,7 +1968,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </div>
                   </form>
                 )}
-                {statementMatches() && statementLock?.locked && statementLock.history.length > 0 && (
+                {statementMatches() && statementLock && statementLock.history.length > 0 && (
                   <section className="editor-panel statement-history" aria-label="Earlier versions">
                     <div className="panel-heading">
                       <h2>Earlier versions</h2>
@@ -1973,23 +1978,27 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                       return (
                         <div key={`${entry.when}-${entry.who}-${entry.action || "modify"}`}>
                           <p><strong>{formatWhen(entry.when)}</strong> by {entry.who}. {entry.action === "unlock" ? "Unlocked" : entry.action === "relock" ? "Locked again" : "Modified"}.</p>
-                          {entry.beforeTotals && entry.afterTotals && (
+                          {entry.beforeTotals && entry.afterTotals && totalsChanged(entry) && (
                             <p className="helper-line">Owner payout {money(entry.beforeTotals.ownerPayout || 0)} to {money(entry.afterTotals.ownerPayout || 0)}. Net accommodation {money(entry.beforeTotals.netAccommodation || 0)} to {money(entry.afterTotals.netAccommodation || 0)}.</p>
                           )}
+                          {changes.length === 0 ? (
+                            <p className="history-unchanged">No amounts changed.</p>
+                          ) : (
                           <div className="table-wrap">
                             <table className="history-table">
                               <thead><tr><th>Line</th><th>Before</th><th>After</th></tr></thead>
                               <tbody>
-                                {(changes.length ? changes : [{ label: "Recurring charges", before: undefined, after: undefined }]).map((row) => (
+                                {changes.map((row) => (
                                   <tr key={row.label}>
                                     <td>{row.label}</td>
-                                    <td>{row.before == null ? "—" : money(row.before)}</td>
-                                    <td>{row.after == null ? "—" : money(row.after)}</td>
+                                    <td>{row.before == null ? <span className="history-dash">—</span> : money(row.before)}</td>
+                                    <td>{row.after == null ? <span className="history-dash">—</span> : money(row.after)}</td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
                           </div>
+                          )}
                         </div>
                       );
                     })}

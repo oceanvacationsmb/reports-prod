@@ -1,6 +1,6 @@
 :root {
   --ink: #102622;
-  --muted: #687a78;
+  --muted: #4a5c5a;
   --paper: #f4f0e8;
   --panel: #fffdfa;
   --panel-soft: #f8f5ef;
@@ -615,6 +615,16 @@ select:disabled {
   margin-top: 8px;
 }
 
+.history-dash,
+.history-unchanged {
+  color: #4a5c5a;
+  font-weight: 650;
+}
+
+.history-unchanged {
+  margin: 8px 0 0;
+}
+
 .ten-ninety-nine-total {
   display: grid;
   gap: 8px;
@@ -629,6 +639,13 @@ select:disabled {
 .ten-ninety-nine-total p:first-child {
   font-size: 1.05rem;
   font-weight: 800;
+}
+
+.ten-ninety-nine-amount {
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--ink);
 }
 
 .missing-final,
@@ -2040,16 +2057,17 @@ select:disabled {
     white-space: normal;
   }
 
-  .ten-ninety-nine-table tr:not(.missing-final) td[data-label] {
+  .ten-ninety-nine-table tr td[data-label] {
     display: flex;
     justify-content: space-between;
     gap: 12px;
   }
 
-  .ten-ninety-nine-table tr:not(.missing-final) td[data-label]::before {
+  .ten-ninety-nine-table tr td[data-label]::before {
     content: attr(data-label);
     color: #4a5c5a;
     font-size: 0.72rem;
+    font-weight: 650;
     text-transform: uppercase;
   }
 }
@@ -3646,10 +3664,18 @@ tr:last-child td {
   }
 }
 
-.gri-locality {
+.gri-document .gri-locality {
   display: block;
-  margin-top: 4px;
-  color: var(--ink);
+  margin: 0 0 6px;
+  color: #4a5c5a;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.gri-document .report-hero h1.gri-street {
+  margin-top: 0;
 }
 
 .tax-form-panel {
@@ -3672,6 +3698,28 @@ tr:last-child td {
   width: auto;
   flex: 0 0 auto;
   padding: 0 18px;
+}
+
+@media (max-width: 520px) {
+  .tax-form-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .tax-form-actions label {
+    width: 100%;
+    flex: none;
+  }
+
+  .tax-form-actions .primary-action,
+  .tax-form-panel .secondary-action {
+    width: 100%;
+    height: auto;
+    min-height: 46px;
+    padding: 10px 14px;
+    white-space: normal;
+  }
 }
 
 .tax-form-panel .tax-lines,
@@ -3703,6 +3751,61 @@ tr:last-child td {
 .tax-sheet .tax-form-panel .tax-lines td:nth-child(3) {
   width: auto;
   text-align: left;
+}
+
+.tax-lines-block {
+  margin-top: 16px;
+}
+
+.tax-lines-block h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.tax-lines tr.tax-subtotal td {
+  font-weight: 800;
+}
+
+.tax-total-due {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 12px;
+  margin: 12px 0;
+  color: var(--ink);
+}
+
+.tax-total-due strong {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-plain,
+.tax-how {
+  max-width: 70ch;
+  color: #4a5c5a;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.tax-how {
+  margin: 8px 0 12px;
+}
+
+.tax-how summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.tax-how p {
+  margin: 8px 0 0;
+}
+
+.tax-mode {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .tax-sheet .tax-form-panel .tax-lines th:nth-child(4),

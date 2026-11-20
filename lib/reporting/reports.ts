@@ -732,26 +732,23 @@ function griReportDocument(property: string, propertyAddress: string, rows: Calc
   const locality = localityLine(postal);
   const savedAddress = propertyAddress.trim();
   const displayAddress = singleLineAddress(postal) || savedAddress || property;
-  const complete = Boolean(street && locality);
+  const hasAddress = Boolean(savedAddress || (street && street !== property));
 
+  const title = street || displayAddress || property;
   return `
     <article class="report-document gri-document">
       <header class="report-hero">
         <p>Ocean Vacations</p>
         <span class="gri-title-label">Gross Rental Income Report</span>
-        <h1>${escapeHtml(displayAddress)}</h1>
+        ${locality ? `<span class="gri-locality">${escapeHtml(locality)}</span>` : ""}
+        <h1 class="gri-street">${escapeHtml(title)}</h1>
         <span>${escapeHtml(periodLabel)}</span>
         <div class="report-hero-details">
           <span>oceanvacationsmb@gmail.com</span>
           <span>843-222-6516</span>
         </div>
       </header>
-      <section class="gri-property-card${savedAddress || complete ? "" : " missing-address"}">
-        <span>Property Address</span>
-        <strong class="gri-street">${escapeHtml(street || displayAddress)}</strong>
-        ${locality ? `<span class="gri-locality">${escapeHtml(locality)}</span>` : ""}
-        ${savedAddress || complete ? "" : `<small class="gri-address-hint">Add the street, city, state, and ZIP for ${escapeHtml(property)} in Settings &gt; Properties before sending this report.</small>`}
-      </section>
+      ${hasAddress ? "" : `<section class="gri-property-card missing-address"><small class="gri-address-hint">Add the street, city, state, and ZIP for ${escapeHtml(property)} in Settings &gt; Properties before sending this report.</small></section>`}
       <section class="metric-grid">
         <div class="metric"><span>Report Date</span><strong>${escapeHtml(reportDate)}</strong></div>
         <div class="metric"><span>Gross Payout</span><strong>${formatMoney(grossPayout)}</strong></div>

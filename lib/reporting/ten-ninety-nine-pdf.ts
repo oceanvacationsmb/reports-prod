@@ -32,17 +32,24 @@ export async function annual1099Pdf(report: Annual1099Report) {
       owner.finalCount
         ? `Total from ${owner.finalCount} of 12 final months: ${money(owner.annualTotal)}`
         : "No final statements yet",
-      10,
-      font
+      12,
+      bold
     );
     for (const month of owner.months) {
       if (month.status === "missing") {
-        write(`${month.label}: Not final - no locked statement`, 9, font);
+        write(`${month.label}: Not final`, 9, font);
       } else if (month.status === "deposit-missing") {
         write(`${month.label}: Deposit not recorded`, 9, font);
       } else {
         write(`${month.label}: ${money(month.reportingAmount || 0)}`, 9, font);
       }
+    }
+    const missing = owner.months.filter((month) => month.status === "missing").length;
+    if (owner.finalCount && missing) {
+      const sentence = missing === 1
+        ? "1 month isn't final yet. It needs a sent statement."
+        : `${missing} months aren't final yet. Each needs a sent statement.`;
+      write(sentence, 9, font);
     }
     y -= 8;
   }
