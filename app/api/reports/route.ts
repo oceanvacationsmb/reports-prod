@@ -10,6 +10,7 @@ import { normalizeBasis } from "@/lib/reporting/ten-ninety-nine";
 import { getSettings } from "@/lib/settings";
 import { reservationQueryForPeriod } from "@/lib/reporting/reservation-query";
 import { buildAllOwnersTaxReport, buildOwnerReport, buildSummaryReport, periodFromRequest } from "@/lib/reporting/reports";
+import { loadStatementChargesByMonth, monthChargesForStatement } from "@/lib/statement-month-charges";
 import type { ExpenseLike, NormalizedReservation, OwnerLike, PropertyLike } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -24,6 +25,18 @@ const schema = z.object({
   endDate: z.string().optional(),
   calculationSource: z.enum(["reports", "portal"]).optional().default("reports")
 });
+
+async function withMonthCharges<T extends { reportKey: string; year?: number; month?: number }>(ownerId: string, body: T) {
+  if (body.reportKey !== "statement" || !body.year) return body;
+  if (body.month) {
+    const recurringOverride = await monthChargesForStatement(ownerId, body.year, body.month);
+    if (!recurringOverride) return body;
+    return { ...body, recurringOverride };
+  }
+  const monthChargeOverrides = await loadStatementChargesByMonth(ownerId, body.year);
+  if (!Object.keys(monthChargeOverrides).length) return body;
+  return { ...body, monthChargeOverrides };
+}
 
 function isAggregateOwner(owner: OwnerLike) {
   return owner.name.trim().toLowerCase() === "all properties";
@@ -109,7 +122,14 @@ export async function POST(req: NextRequest) {
         const rows = await loadOwnerRows(owner, { startDate: period.startDate, endDate: period.endDate, property: body.property });
         const expenses = asPlain(await Expense.find({ ownerId }).lean()) as ExpenseLike[];
         const properties = asPlain(await Property.find().lean()) as PropertyLike[];
-        const report = buildOwnerReport(owner, rows, expenses, settings, { ...body, readOnly: false }, properties);
+        const report = buildOwnerReport(
+          owner,
+          rows,
+          expenses,
+          settings,
+          await withMonthCharges(ownerId, { ...body, readOnly: false }),
+          properties
+        );
         const history = await statementHistory(ownerId, body.year, body.month);
         return ok({
           report,
@@ -130,7 +150,14 @@ export async function POST(req: NextRequest) {
     const lockedMonths = body.reportKey === "1099"
       ? await listFinalMonths(ownerId, body.year || new Date().getUTCFullYear())
       : undefined;
-    const report = buildOwnerReport(owner, rows, expenses, settings, { ...body, lockedMonths, tenNinetyNineBasis: normalizeBasis(settings.tenNinetyNineBasis) }, properties);
+    const report = buildOwnerReport(
+      owner,
+      rows,
+      expenses,
+      settings,
+      await withMonthCharges(ownerId, { ...body, lockedMonths, tenNinetyNineBasis: normalizeBasis(settings.tenNinetyNineBasis) }),
+      properties
+    );
     if (body.reportKey === "statement" && body.month) {
       return ok({ report, locked: false, previouslySent: false, shareId: "", recurring: [], history: [] });
     }

@@ -18,7 +18,8 @@ export type ReportRequest = {
   calculationSource?: "reports" | "portal";
   readOnly?: boolean;
   hideZeroReservations?: boolean;
-  recurringOverride?: { label: string; amount: number }[];
+  recurringOverride?: { id?: string; label: string; amount: number; property?: string }[];
+  monthChargeOverrides?: Record<number, { id?: string; label: string; amount: number; property?: string }[]>;
   lockedMonths?: FinalMonthInput[];
   tenNinetyNineBasis?: TenNinetyNineBasis;
 };
@@ -965,19 +966,66 @@ function byProperty(
     .join("");
 }
 
-function overrideRecurring(owner: OwnerLike, request: ReportRequest, lines: { label: string; amount: number }[]) {
+function chargesForYear(
+  owner: OwnerLike,
+  startDate: string,
+  endDate: string,
+  year: number,
+  overrides: Record<number, { id?: string; label: string; amount: number; property?: string }[]>
+) {
+  const start = parseDate(startDate);
+  const end = parseDate(endDate);
+  if (!start || !end) return recurringExpenses(owner, startDate, endDate);
+  const charges: ExpenseLike[] = [];
+  const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+  while (cursor <= last) {
+    const month = cursor.getUTCMonth() + 1;
+    const periodYear = cursor.getUTCFullYear();
+    const lastDay = new Date(Date.UTC(periodYear, month, 0)).getUTCDate();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const monthStart = `${periodYear}-${pad(month)}-01`;
+    const monthEnd = `${periodYear}-${pad(month)}-${pad(lastDay)}`;
+    const override = periodYear === year ? overrides[month] : undefined;
+    if (override) {
+      override.forEach((charge, index) => {
+        charges.push({
+          _id: charge.id || `override:${index}:${periodYear}-${month}`,
+          ownerId: String(owner._id || owner.id || ""),
+          property: charge.property || "Recurring",
+          type: charge.label,
+          amount: Number(charge.amount || 0),
+          month,
+          year: periodYear,
+          vendor: "Recurring",
+          notes: "Charge for this month"
+        });
+      });
+    } else {
+      charges.push(...recurringExpenses(owner, monthStart, monthEnd));
+    }
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return charges;
+}
+
+function overrideRecurring(
+  owner: OwnerLike,
+  request: ReportRequest,
+  lines: { id?: string; label: string; amount: number; property?: string }[]
+) {
   const year = request.year || new Date().getUTCFullYear();
   const month = request.month || 1;
   return lines.map<ExpenseLike>((charge, index) => ({
-    _id: `override:${index}:${year}-${month}`,
+    _id: charge.id || `override:${index}:${year}-${month}`,
     ownerId: String(owner._id || owner.id || ""),
-    property: "Recurring",
+    property: charge.property || "Recurring",
     type: charge.label,
     amount: Number(charge.amount || 0),
     month,
     year,
     vendor: "Recurring",
-    notes: "Base recurring charge"
+    notes: "Charge for this month"
   }));
 }
 
@@ -1050,7 +1098,9 @@ export function buildOwnerReport(
   const filteredExpenses = filterExpenses(rawExpenses, request, period.startDate, period.endDate);
   const recurring = Array.isArray(request.recurringOverride)
     ? overrideRecurring(owner, request, request.recurringOverride)
-    : recurringExpenses(owner, period.startDate, period.endDate);
+    : request.monthChargeOverrides
+      ? chargesForYear(owner, period.startDate, period.endDate, request.year || new Date().getUTCFullYear(), request.monthChargeOverrides)
+      : recurringExpenses(owner, period.startDate, period.endDate);
   const ownerStayRows = reportRows.filter((row) => row.isOwnerStay);
   const ownerStayTotal = ownerStayRows.reduce((sum, row) => sum + ownerStayCharge(row), 0);
   const total = totals(reportRows, filteredExpenses, recurring, ownerStayTotal);

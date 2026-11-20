@@ -871,6 +871,22 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     });
   }
 
+  function openMonthCharge() {
+    const values = { type: "", amount: "0.00" };
+    setStatementEdit({
+      kind: "recurring",
+      id: "monthCharge:new",
+      isOwnerStay: false,
+      isNew: true,
+      fields: [
+        { key: "type", label: "Description", type: "text" },
+        { key: "amount", label: "Amount", type: "number" }
+      ],
+      values,
+      originalValues: { ...values }
+    });
+  }
+
   function fieldKey(label: string) {
     const normalized = label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     const map: Record<string, string> = {
@@ -1317,10 +1333,19 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
     try {
       if (action === "delete") {
-        if (!window.confirm("Delete this row from MongoDB?")) return;
+        const message = kind === "recurring"
+          ? "Remove this charge from this month only? Recurring settings stay the same."
+          : "Delete this row from MongoDB?";
+        if (!window.confirm(message)) return;
         await api("/api/statement-items", {
           method: "DELETE",
-          body: JSON.stringify({ ownerId, kind, id })
+          body: JSON.stringify({
+            ownerId,
+            kind,
+            id,
+            year: Number(reportForm.year),
+            month: Number(reportForm.month)
+          })
         });
       } else {
         const isOwnerStay = Boolean(button.closest("table")?.querySelector("th:nth-child(4)")?.textContent?.includes("Owner Stay"));
@@ -1392,7 +1417,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         : statementEdit.id;
       await api("/api/statement-items", {
         method: statementEdit.isNew ? "POST" : "PATCH",
-        body: JSON.stringify({ ownerId, kind: statementEdit.kind, id: itemId, values })
+        body: JSON.stringify({
+          ownerId,
+          kind: statementEdit.kind,
+          id: itemId,
+          values,
+          year: Number(reportForm.year),
+          month: Number(reportForm.month)
+        })
       });
       setStatementEdit(null);
       await loadData();
@@ -2005,14 +2037,19 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   </section>
                 )}
                 {statementMatches() && statementLock && !statementLock.locked && isAdmin && (
-                  statementLock.previouslySent ? (
-                    <div className="message statement-lock">
-                      <div className="status-pill draft">Unlocked. Edit this month, then approve it to lock a new snapshot.</div>
-                      {statementLock.sentShareId && <a href={`/share/${statementLock.sentShareId}`} target="_blank" rel="noreferrer">Sent version</a>}
-                    </div>
-                  ) : (
-                    <div className="status-pill draft">Draft, not sent</div>
-                  )
+                  <div className="message statement-lock">
+                    {statementLock.previouslySent ? (
+                      <>
+                        <div className="status-pill draft">Unlocked. Edit this month, then approve it to lock a new snapshot.</div>
+                        {statementLock.sentShareId && <a href={`/share/${statementLock.sentShareId}`} target="_blank" rel="noreferrer">Sent version</a>}
+                      </>
+                    ) : (
+                      <div className="status-pill draft">Draft, not sent</div>
+                    )}
+                    <button className="secondary-action small" type="button" onClick={openMonthCharge}>
+                      Add charge for this month
+                    </button>
+                  </div>
                 )}
                 {modifyOpen && statementLock?.locked && (
                   <form className="editor-panel statement-modify" onSubmit={saveModification}>
@@ -2785,7 +2822,20 @@ export function DashboardApp({ user }: { user: SessionUser }) {
             <button className="modal-close" type="button" onClick={() => setStatementEdit(null)} aria-label="Close editor">
               <X size={22} />
             </button>
-            <h2>{statementEdit.isNew ? "Add missing reservation" : "Edit statement row"}</h2>
+            <h2>
+              {statementEdit.kind === "recurring"
+                ? statementEdit.isNew
+                  ? "Add charge for this month"
+                  : "Edit this month's charge"
+                : statementEdit.isNew
+                  ? "Add missing reservation"
+                  : "Edit statement row"}
+            </h2>
+            {statementEdit.kind === "recurring" && (
+              <p className="muted-copy">
+                This change applies to {months[Number(reportForm.month) - 1] || "this month"} only. Recurring settings stay the same.
+              </p>
+            )}
             <div className="modal-field-grid">
               {statementEdit.fields.map((field) => (
                 <label key={field.key}>
@@ -2831,7 +2881,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               <button type="button" className="secondary-action" onClick={() => setStatementEdit(null)}>
                 Cancel
               </button>
-              <button className="primary-action">{statementEdit.isNew ? "Add reservation" : "Save"}</button>
+              <button className="primary-action">
+                {statementEdit.kind === "recurring" ? (statementEdit.isNew ? "Add charge" : "Save") : statementEdit.isNew ? "Add reservation" : "Save"}
+              </button>
             </div>
           </form>
         </div>

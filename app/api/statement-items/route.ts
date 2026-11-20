@@ -2,18 +2,20 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { assertAdmin } from "@/lib/auth";
 import { connectDb } from "@/lib/db";
-import { Expense, GuestyCache, Owner, ReservationOverride } from "@/lib/models";
+import { Expense, GuestyCache, ReservationOverride } from "@/lib/models";
+import { editMonthCharge } from "@/lib/statement-month-charges";
 import { fail, ok } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 const kindSchema = z.enum(["reservation", "expense", "recurring"]);
-const recurringArrays = ["recurringCharges", "monthlyRecurringCharges", "specificDateRecurringCharges", "dateRangeRecurringCharges"] as const;
 
 const schema = z.object({
   ownerId: z.string(),
   kind: kindSchema,
   id: z.string(),
+  year: z.coerce.number().optional(),
+  month: z.coerce.number().optional(),
   values: z.record(z.string(), z.union([z.string(), z.number()])).optional().default({})
 });
 
@@ -92,36 +94,31 @@ async function updateReservation(
   );
 }
 
-async function updateRecurring(ownerId: string, id: string, values: Record<string, string | number>) {
-  const [arrayName, rawIndex] = id.split(":");
-  if (!recurringArrays.includes(arrayName as (typeof recurringArrays)[number])) {
-    throw Object.assign(new Error("Recurring charge not found."), { status: 404 });
+function monthFrom(body: { year?: number; month?: number }) {
+  if (!body.year || !body.month) {
+    throw Object.assign(new Error("Choose the statement month before changing a recurring charge."), { status: 400 });
   }
-  const index = Number(rawIndex);
-  const owner = await Owner.findById(ownerId);
-  const items = owner?.[arrayName];
-  if (!owner || !Array.isArray(items) || !items[index]) {
-    throw Object.assign(new Error("Recurring charge not found."), { status: 404 });
-  }
+  return { year: body.year, month: body.month };
+}
 
-  if (Object.keys(values).length) {
-    if (values.type !== undefined) items[index].label = String(values.type);
-    if (values.amount !== undefined) items[index].amount = numberValue(values.amount);
-    if (values.period !== undefined) {
-      const period = splitPeriod(values.period);
-      if (period.month) items[index].month = period.month;
-      if (period.year) items[index].year = period.year;
-    }
-    if (values.month !== undefined) items[index].month = numberValue(values.month);
-    if (values.day !== undefined) items[index].day = numberValue(values.day);
-    if (values.startDate !== undefined) items[index].startDate = String(values.startDate);
-    if (values.endDate !== undefined) items[index].endDate = String(values.endDate);
-  } else {
-    items.splice(index, 1);
-  }
-
-  owner.markModified(arrayName);
-  await owner.save();
+async function updateRecurring(
+  ownerId: string,
+  id: string,
+  values: Record<string, string | number>,
+  period: { year: number; month: number },
+  options: { add?: boolean } = {}
+) {
+  const removing = !options.add && !String(values.type || "").trim();
+  await editMonthCharge({
+    ownerId,
+    year: period.year,
+    month: period.month,
+    id,
+    label: values.type !== undefined ? String(values.type) : undefined,
+    amount: values.amount !== undefined ? numberValue(values.amount) : undefined,
+    add: options.add,
+    remove: removing
+  });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -146,7 +143,7 @@ export async function PATCH(req: NextRequest) {
       if (updates.amount !== undefined) updates.amount = numberValue(updates.amount);
       await Expense.findOneAndUpdate({ _id: body.id, ownerId: body.ownerId }, { $set: updates });
     }
-    if (body.kind === "recurring") await updateRecurring(body.ownerId, body.id, body.values);
+    if (body.kind === "recurring") await updateRecurring(body.ownerId, body.id, body.values, monthFrom(body));
 
     return ok({ ok: true });
   } catch (error) {
@@ -159,8 +156,12 @@ export async function POST(req: NextRequest) {
     assertAdmin(req);
     await connectDb();
     const body = schema.parse(await req.json());
+    if (body.kind === "recurring") {
+      await updateRecurring(body.ownerId, body.id, body.values, monthFrom(body), { add: true });
+      return ok({ ok: true });
+    }
     if (body.kind !== "reservation") {
-      throw Object.assign(new Error("Only missing reservations can be added here."), { status: 400 });
+      throw Object.assign(new Error("Only a reservation or this month's charge can be added here."), { status: 400 });
     }
     await updateReservation(body.ownerId, body.id, body.values, { manual: true });
     return ok({ ok: true });
@@ -186,7 +187,7 @@ export async function DELETE(req: NextRequest) {
       await ReservationOverride.deleteOne({ ownerId: body.ownerId, reservationId: body.id });
     }
     if (body.kind === "expense") await Expense.deleteOne({ _id: body.id, ownerId: body.ownerId });
-    if (body.kind === "recurring") await updateRecurring(body.ownerId, body.id, {});
+    if (body.kind === "recurring") await updateRecurring(body.ownerId, body.id, {}, monthFrom(body));
 
     return ok({ ok: true });
   } catch (error) {

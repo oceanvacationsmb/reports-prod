@@ -225,12 +225,25 @@ const settingSchema = new Schema(
 
 const statementLineSchema = new Schema(
   {
+    id: { type: String, default: "" },
     label: { type: String, required: true },
     amount: { type: Number, required: true },
     property: { type: String, default: "" }
   },
   { _id: false }
 );
+
+const statementMonthOverrideSchema = new Schema(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: "Owner", required: true },
+    year: { type: Number, required: true },
+    month: { type: Number, required: true },
+    recurring: { type: [statementLineSchema], default: [] }
+  },
+  { timestamps: true, versionKey: false }
+);
+
+statementMonthOverrideSchema.index({ ownerId: 1, year: 1, month: 1 }, { unique: true });
 
 const statementExpenseLineSchema = new Schema(
   {
@@ -356,6 +369,7 @@ const taxJurisdictionSchema = new Schema(
 );
 
 export const LockedStatement: any = models.LockedStatement || mongoose.model("LockedStatement", lockedStatementSchema);
+export const StatementMonthOverride: any = models.StatementMonthOverride || mongoose.model("StatementMonthOverride", statementMonthOverrideSchema);
 export const StatementAudit: any = models.StatementAudit || mongoose.model("StatementAudit", statementAuditSchema);
 export const StatementSnapshot: any = models.StatementSnapshot || mongoose.model("StatementSnapshot", statementSnapshotSchema);
 export const TaxJurisdiction: any = models.TaxJurisdiction || mongoose.model("TaxJurisdiction", taxJurisdictionSchema);
