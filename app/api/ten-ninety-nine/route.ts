@@ -55,7 +55,8 @@ export async function GET(req: NextRequest) {
               month: item.month,
               shareId: item.shareId,
               depositRecorded: item.depositRecorded,
-              totals: item.totals
+              totals: item.totals,
+              htmlSnapshot: item.htmlSnapshot
             })),
           basis
         });

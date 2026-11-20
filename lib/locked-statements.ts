@@ -71,6 +71,7 @@ export type FinalMonthInput = {
   shareId: string;
   depositRecorded: boolean;
   totals: StatementTotals;
+  htmlSnapshot?: string;
 };
 
 export type Final1099Row = {

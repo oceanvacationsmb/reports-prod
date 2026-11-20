@@ -25,8 +25,51 @@ export function normalizeBasis(value: unknown): TenNinetyNineBasis {
   return value === "grossRents" ? "grossRents" : "ownerPayout";
 }
 
-export function reportingAmount(totals: StatementTotals, basis: TenNinetyNineBasis) {
+export function reportingAmount(totals: Pick<StatementTotals, "netAccommodation" | "ownerPayout">, basis: TenNinetyNineBasis) {
   return basis === "grossRents" ? cents(totals.netAccommodation) : cents(totals.ownerPayout);
+}
+
+export type SnapshotPropertySplit = {
+  property: string;
+  netAccommodation: number;
+  pmc: number;
+  expenses: number;
+  ownerPayout: number;
+};
+
+function parseMoney(value: string) {
+  const negative = value.includes("(") || value.trim().startsWith("-");
+  const amount = Number(value.replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(amount)) return null;
+  return negative ? -amount : amount;
+}
+
+function metricAmount(section: string, label: string) {
+  const match = section.match(new RegExp(`<span>\\s*${label}\\s*</span>\\s*<strong>\\s*([^<]+?)\\s*</strong>`, "i"));
+  return match ? parseMoney(match[1]) : null;
+}
+
+/** Read the property blocks saved on a locked statement. Returns null when the snapshot has none. */
+export function propertySplitsFromSnapshot(html: string): SnapshotPropertySplit[] | null {
+  const sections = String(html || "").split(/<section class="property-section">/i).slice(1);
+  const splits: SnapshotPropertySplit[] = [];
+  for (const section of sections) {
+    const header = section.match(/<span>\s*Property\s*<\/span>\s*<h2>([^<]+)<\/h2>/i);
+    if (!header) continue;
+    const property = header[1].replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').trim();
+    if (!property) continue;
+    const netAccommodation = metricAmount(section, "Net Accommodation");
+    const ownerPayout = metricAmount(section, "Owner Payout") ?? metricAmount(section, "Draft Due");
+    if (netAccommodation == null && ownerPayout == null) continue;
+    splits.push({
+      property,
+      netAccommodation: cents(netAccommodation ?? 0),
+      pmc: cents(metricAmount(section, "Pmc") ?? 0),
+      expenses: cents(metricAmount(section, "Expenses") ?? 0),
+      ownerPayout: cents(ownerPayout ?? 0)
+    });
+  }
+  return splits.length ? splits : null;
 }
 
 export type Annual1099Month = Final1099Row & {
@@ -35,11 +78,26 @@ export type Annual1099Month = Final1099Row & {
   reportingAmount: number | null;
 };
 
+export type Property1099Month = {
+  month: number;
+  label: string;
+  status: "final" | "missing" | "deposit-missing" | "not-split";
+  reportingAmount: number | null;
+};
+
+export type Property1099 = {
+  property: string;
+  months: Property1099Month[];
+  annualTotal: number;
+  notSplitMonths: string[];
+};
+
 export type Annual1099Owner = {
   ownerId: string;
   ownerName: string;
   properties: string[];
   months: Annual1099Month[];
+  propertyReports: Property1099[];
   finalCount: number;
   annualTotal: number;
   missingMonths: string[];
@@ -116,15 +174,61 @@ export function buildOwner1099(input: {
     });
   }
   const included = months.filter((row) => row.status === "final");
-  const properties = [...new Set((input.properties || []).map((name) => name.trim()).filter(Boolean))];
+  const splitsByMonth = new Map<number, SnapshotPropertySplit[] | null>();
+  for (const [month, finalMonth] of byMonth) {
+    splitsByMonth.set(month, finalMonth.htmlSnapshot ? propertySplitsFromSnapshot(finalMonth.htmlSnapshot) : null);
+  }
+  const discovered = [...splitsByMonth.values()].flatMap((splits) => splits?.map((split) => split.property) || []);
+  const properties = [...new Set([...(input.properties || []), ...discovered].map((name) => name.trim()).filter(Boolean))];
+  const propertyReports = properties.map((property) => propertyReport(property, months, byMonth, splitsByMonth, input.basis));
   return {
     ownerId: input.ownerId,
     ownerName: input.ownerName,
     properties,
     months,
+    propertyReports,
     finalCount: included.length,
     annualTotal: cents(included.reduce((sum, row) => sum + (row.reportingAmount || 0), 0)),
     missingMonths: months.filter((row) => row.status === "missing").map((row) => row.label)
+  };
+}
+
+function propertyReport(
+  property: string,
+  ownerMonths: Annual1099Month[],
+  byMonth: Map<number, FinalMonthInput>,
+  splitsByMonth: Map<number, SnapshotPropertySplit[] | null>,
+  basis: TenNinetyNineBasis
+): Property1099 {
+  const months = ownerMonths.map((ownerMonth) => {
+    if (ownerMonth.status === "missing") {
+      return { month: ownerMonth.month, label: ownerMonth.label, status: "missing" as const, reportingAmount: null };
+    }
+    if (ownerMonth.status === "deposit-missing") {
+      return { month: ownerMonth.month, label: ownerMonth.label, status: "deposit-missing" as const, reportingAmount: null };
+    }
+    const splits = splitsByMonth.get(ownerMonth.month);
+    if (!splits) {
+      return { month: ownerMonth.month, label: ownerMonth.label, status: "not-split" as const, reportingAmount: null };
+    }
+    const found = splits.find((split) => split.property === property);
+    const finalMonth = byMonth.get(ownerMonth.month);
+    if (!finalMonth) {
+      return { month: ownerMonth.month, label: ownerMonth.label, status: "missing" as const, reportingAmount: null };
+    }
+    return {
+      month: ownerMonth.month,
+      label: ownerMonth.label,
+      status: "final" as const,
+      reportingAmount: found ? reportingAmount(found, basis) : 0
+    };
+  });
+  const counted = months.filter((month) => month.status === "final");
+  return {
+    property,
+    months,
+    annualTotal: cents(counted.reduce((sum, month) => sum + (month.reportingAmount || 0), 0)),
+    notSplitMonths: months.filter((month) => month.status === "not-split").map((month) => month.label)
   };
 }
 
@@ -138,6 +242,41 @@ export function buildAnnual1099(year: number, owners: Annual1099Owner[], basis: 
     finalCount: owners.reduce((sum, owner) => sum + owner.finalCount, 0),
     monthCount: owners.length * 12
   };
+}
+
+function propertyAmount(month: Property1099Month) {
+  if (month.status === "missing") return "Not final";
+  if (month.status === "deposit-missing") return "Deposit not recorded";
+  if (month.status === "not-split") return "Not split on statement";
+  return money(month.reportingAmount || 0);
+}
+
+function propertySections(owner: Annual1099Owner) {
+  if (!owner.propertyReports.length) return "";
+  const unsplit = owner.propertyReports.some((property) => property.notSplitMonths.length);
+  const note = unsplit
+    ? `<p class="ten-ninety-nine-note">A locked month marked Not split on statement did not store an amount for that property. It stays in the owner total and is not guessed.</p>`
+    : "";
+  const blocks = owner.propertyReports
+    .map((property) => {
+      const rows = property.months
+        .map((month) => `<tr class="${month.status === "final" ? "" : "missing-final"}"><td>${escapeHtml(month.label)}</td><td>${escapeHtml(propertyAmount(month))}</td></tr>`)
+        .join("");
+      const annual = property.months.some((month) => month.status === "final")
+        ? `<p class="ten-ninety-nine-property-total">Annual total ${escapeHtml(money(property.annualTotal))}</p>`
+        : `<p class="ten-ninety-nine-property-total">No property amount on the locked statements.</p>`;
+      return `
+        <section class="ten-ninety-nine-property">
+          <h3>${escapeHtml(property.property)}</h3>
+          ${annual}
+          <table class="ten-ninety-nine-property-table">
+            <thead><tr><th>Month</th><th>1099 amount</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </section>`;
+    })
+    .join("");
+  return `${note}${blocks}`;
 }
 
 function missingFinalCopy(count: number) {
@@ -189,7 +328,7 @@ export function renderAnnual1099(report: Annual1099Report) {
         <section class="property-section">
           <header class="property-header"><div><span>Owner</span><h2>${escapeHtml(owner.ownerName)}</h2></div></header>
           <p>Properties: ${escapeHtml(owner.properties.length ? owner.properties.join(", ") : "none on file")}</p>
-          <p class="ten-ninety-nine-note">Monthly amounts are the locked statement total for this owner. Properties are listed once and are not added again.</p>
+          <p class="ten-ninety-nine-note">The owner total comes from the locked statement. Each property below is that statement's own property amount, using the same 1099 setting.</p>
           ${total}
           <div class="table-wrap ten-ninety-nine-table">
             <table>
@@ -197,6 +336,7 @@ export function renderAnnual1099(report: Annual1099Report) {
               <tbody>${rows}</tbody>
             </table>
           </div>
+          ${propertySections(owner)}
           ${notes}
         </section>`;
     })
@@ -214,7 +354,7 @@ export function renderAnnual1099(report: Annual1099Report) {
 export function annual1099Rows(report: Annual1099Report) {
   const header = [
     "Owner",
-    "Properties",
+    "Property",
     "Month",
     "Status",
     "1099 amount",
@@ -230,7 +370,7 @@ export function annual1099Rows(report: Annual1099Report) {
     for (const month of owner.months) {
       rows.push([
         owner.ownerName,
-        owner.properties.join("; "),
+        "Owner total",
         month.label,
         month.status === "final" ? "Final" : month.status === "deposit-missing" ? "Deposit not recorded" : "Not final",
         month.reportingAmount == null ? "" : month.reportingAmount.toFixed(2),
@@ -244,7 +384,7 @@ export function annual1099Rows(report: Annual1099Report) {
     }
     rows.push([
       owner.ownerName,
-      owner.properties.join("; "),
+      "Owner total",
       "Annual total",
       `${owner.finalCount} of 12 final months`,
       owner.finalCount ? owner.annualTotal.toFixed(2) : "",
@@ -255,6 +395,36 @@ export function annual1099Rows(report: Annual1099Report) {
       "",
       ""
     ]);
+    for (const property of owner.propertyReports) {
+      for (const month of property.months) {
+        rows.push([
+          owner.ownerName,
+          property.property,
+          month.label,
+          month.status === "final" ? "Final" : month.status === "deposit-missing" ? "Deposit not recorded" : month.status === "not-split" ? "Not split on statement" : "Not final",
+          month.status === "final" ? (month.reportingAmount || 0).toFixed(2) : "",
+          report.basisLabel,
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]);
+      }
+      rows.push([
+        owner.ownerName,
+        property.property,
+        "Annual total",
+        property.months.some((month) => month.status === "final") ? "Property total" : "Not split on statement",
+        property.months.some((month) => month.status === "final") ? property.annualTotal.toFixed(2) : "",
+        report.basisLabel,
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]);
+    }
   }
   return rows;
 }

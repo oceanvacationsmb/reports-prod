@@ -51,6 +51,30 @@ export async function annual1099Pdf(report: Annual1099Report) {
         : `${missing} months aren't final yet. Each needs a sent statement.`;
       write(sentence, 9, font);
     }
+    if (owner.propertyReports.some((property) => property.notSplitMonths.length)) {
+      write("A locked month marked Not split on statement did not store that property's amount. It stays in the owner total.", 9, font);
+    }
+    for (const property of owner.propertyReports) {
+      y -= 4;
+      write(property.property, 11, bold);
+      write(
+        property.months.some((month) => month.status === "final")
+          ? `Annual total ${money(property.annualTotal)}`
+          : "No property amount on the locked statements.",
+        10,
+        font
+      );
+      for (const month of property.months) {
+        const amount = month.status === "missing"
+          ? "Not final"
+          : month.status === "deposit-missing"
+            ? "Deposit not recorded"
+            : month.status === "not-split"
+              ? "Not split on statement"
+              : money(month.reportingAmount || 0);
+        write(`${month.label}: ${amount}`, 9, font);
+      }
+    }
     y -= 8;
   }
   if (report.owners.length > 1) write(`All owners ${money(report.annualTotal)}`, 12, bold);

@@ -83,4 +83,109 @@ describe("1099 reconciliation", () => {
     assert.match(text, /Gross rents/);
     assert.equal(text.includes("999"), false);
   });
+
+  it("splits a locked statement across properties and keeps the owner total", () => {
+    function snapshot(parts: Array<{ name: string; net: number; payout: number }>) {
+      return parts
+        .map(
+          (part) => `<section class="property-section"><header class="property-header"><div><span>Property</span><h2>${part.name}</h2></div></header><div class="property-metric-grid"><div class="property-metric"><span>Net Accommodation</span><strong>$${part.net.toFixed(2)}</strong></div><div class="property-metric"><span>Owner Payout</span><strong>$${part.payout.toFixed(2)}</strong></div></div></section>`
+        )
+        .join("");
+    }
+    const finals = [
+      {
+        year: 2026,
+        month: 1,
+        shareId: "jan",
+        depositRecorded: true,
+        totals: totals(100, 180),
+        htmlSnapshot: snapshot([
+          { name: "Cottage", net: 100, payout: 60 },
+          { name: "Cabin", net: 80, payout: 40 }
+        ])
+      },
+      {
+        year: 2026,
+        month: 3,
+        shareId: "mar",
+        depositRecorded: true,
+        totals: totals(40, 70),
+        htmlSnapshot: snapshot([{ name: "Cottage", net: 70, payout: 40 }])
+      }
+    ];
+    const payout = buildOwner1099({
+      ownerId: "owner-1",
+      ownerName: "Sample Owner",
+      properties: ["Cottage", "Cabin"],
+      year: 2026,
+      basis: "ownerPayout",
+      finals
+    });
+    const cottage = payout.propertyReports.find((property) => property.property === "Cottage");
+    const cabin = payout.propertyReports.find((property) => property.property === "Cabin");
+    if (!cottage || !cabin) throw new Error("missing property report");
+    assert.equal(cottage.months[0]?.reportingAmount, 60);
+    assert.equal(cabin.months[0]?.reportingAmount, 40);
+    assert.equal(cottage.months[2]?.reportingAmount, 40);
+    assert.equal(cabin.months[2]?.reportingAmount, 0);
+    assert.equal(cabin.months[2]?.status, "final");
+    assert.equal(cents(cottage.annualTotal + cabin.annualTotal), payout.annualTotal);
+    assert.equal(payout.annualTotal, 140);
+
+    const gross = buildOwner1099({ ...payout, basis: "grossRents", properties: ["Cottage", "Cabin"], ownerId: "owner-1", ownerName: "Sample Owner", year: 2026, finals });
+    const grossCottage = gross.propertyReports.find((property) => property.property === "Cottage");
+    const grossCabin = gross.propertyReports.find((property) => property.property === "Cabin");
+    if (!grossCottage || !grossCabin) throw new Error("missing gross property report");
+    assert.equal(grossCottage.months[0]?.reportingAmount, 100);
+    assert.equal(grossCabin.months[2]?.reportingAmount, 0);
+    assert.equal(cents(grossCottage.annualTotal + grossCabin.annualTotal), gross.annualTotal);
+
+    const file = workbookXlsx(annual1099Rows(buildAnnual1099(2026, [payout], "ownerPayout")));
+    const sheet = file.toString("utf8");
+    assert.match(sheet, /Cottage/);
+    assert.match(sheet, /Cabin/);
+    assert.match(sheet, /60\.00/);
+    assert.match(sheet, /40\.00/);
+
+    const html = buildOwnerReport(owner, [], [], settings, {
+      reportKey: "1099",
+      year: 2026,
+      tenNinetyNineBasis: "ownerPayout",
+      lockedMonths: finals
+    });
+    assert.match(html.html, /Cottage/);
+    assert.match(html.html, /Cabin/);
+    assert.match(html.html, /\$60\.00/);
+    assert.match(html.html, /\$40\.00/);
+  });
+
+  it("does not invent a property split when the locked statement has none", () => {
+    const report = buildOwner1099({
+      ownerId: "owner-1",
+      ownerName: "Sample Owner",
+      properties: ["Cottage", "Cabin"],
+      year: 2026,
+      basis: "ownerPayout",
+      finals: [{ year: 2026, month: 8, shareId: "aug", depositRecorded: true, totals: totals(80, 150), htmlSnapshot: "<p>Owner total only</p>" }]
+    });
+    assert.equal(report.annualTotal, 80);
+    for (const property of report.propertyReports) {
+      assert.equal(property.months[7]?.status, "not-split");
+      assert.equal(property.months[7]?.reportingAmount, null);
+      assert.equal(property.annualTotal, 0);
+    }
+    const html = buildOwnerReport(
+      { ...owner, properties: ["Cottage", "Cabin"] },
+      [],
+      [],
+      settings,
+      { reportKey: "1099", year: 2026, tenNinetyNineBasis: "ownerPayout", lockedMonths: [{ year: 2026, month: 8, shareId: "aug", depositRecorded: true, totals: totals(80, 150), htmlSnapshot: "<p>Owner total only</p>" }] }
+    );
+    assert.match(html.html, /Not split on statement/);
+    assert.equal(html.html.includes("$80.00"), true);
+  });
 });
+
+function cents(value: number) {
+  return Math.round(value * 100) / 100;
+}

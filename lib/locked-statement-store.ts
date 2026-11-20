@@ -384,7 +384,8 @@ export async function listFinalMonths(ownerId: string, year: number): Promise<Fi
       month: statement.month,
       shareId: statement.shareId,
       depositRecorded: statement.depositRecorded,
-      totals: statement.totals
+      totals: statement.totals,
+      htmlSnapshot: statement.htmlSnapshot
     };
   });
 }

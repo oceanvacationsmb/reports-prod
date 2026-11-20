@@ -648,6 +648,27 @@ select:disabled {
   color: var(--ink);
 }
 
+.ten-ninety-nine-property {
+  margin-top: 18px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ten-ninety-nine-property h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.ten-ninety-nine-property-total {
+  margin: 4px 0 8px;
+  font-weight: 800;
+}
+
+.ten-ninety-nine-property-table {
+  width: 100%;
+  max-width: 28rem;
+}
+
 .missing-final,
 .missing-final-copy {
   color: #4a5c5a;
@@ -3860,6 +3881,7 @@ tr:last-child td {
   .tax-form-panel .tax-schedule td:nth-child(4)::before {
     content: "Taxable revenue";
     float: left;
+    margin-right: 0.35em;
     color: #4a5c5a;
     font-size: 13px;
     font-weight: 650;
