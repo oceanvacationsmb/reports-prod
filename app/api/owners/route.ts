@@ -32,7 +32,7 @@ const ownerSchema = z.object({
   recurringCharges: z.array(charge).default([]),
   monthlyRecurringCharges: z.array(charge.extend({ month: z.coerce.number() })).default([]),
   specificDateRecurringCharges: z.array(charge.extend({ month: z.coerce.number(), day: z.coerce.number() })).default([]),
-  dateRangeRecurringCharges: z.array(charge.extend({ startDate: z.string(), endDate: z.string() })).default([]),
+  dateRangeRecurringCharges: z.array(charge.extend({ startDate: z.string(), endDate: z.string(), schedule: z.enum(["", "monthly", "annual"]).optional().transform((value) => value || undefined) })).default([]),
   portalPassword: z.string().min(10).optional().or(z.literal(""))
 });
 

@@ -31,7 +31,7 @@ const patchSchema = z.object({
   recurringCharges: z.array(z.object({ label: z.string(), amount: z.coerce.number() })).optional(),
   monthlyRecurringCharges: z.array(z.object({ month: z.coerce.number(), label: z.string(), amount: z.coerce.number() })).optional(),
   specificDateRecurringCharges: z.array(z.object({ month: z.coerce.number(), day: z.coerce.number(), label: z.string(), amount: z.coerce.number() })).optional(),
-  dateRangeRecurringCharges: z.array(z.object({ startDate: z.string(), endDate: z.string(), label: z.string(), amount: z.coerce.number() })).optional(),
+  dateRangeRecurringCharges: z.array(z.object({ startDate: z.string(), endDate: z.string(), schedule: z.enum(["", "monthly", "annual"]).optional().transform((value) => value || undefined), label: z.string(), amount: z.coerce.number() })).optional(),
   portalPassword: z.string().min(10).optional().or(z.literal(""))
 });
 

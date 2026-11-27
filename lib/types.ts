@@ -27,6 +27,7 @@ export type SpecificDateCharge = MoneyCharge & {
 export type DateRangeCharge = MoneyCharge & {
   startDate: string;
   endDate: string;
+  schedule?: "monthly" | "annual";
 };
 
 export type CleaningCap = {
@@ -53,6 +54,7 @@ export type OwnerLike = {
   monthlyRecurringCharges?: MonthlyCharge[];
   specificDateRecurringCharges?: SpecificDateCharge[];
   dateRangeRecurringCharges?: DateRangeCharge[];
+  recurringStatementOverrides?: Record<string, { deleted?: boolean; type?: string; amount?: number; notes?: string }>;
 };
 
 export type ExpenseLike = {

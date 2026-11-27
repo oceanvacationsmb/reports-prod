@@ -319,6 +319,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [expenseTypes, setExpenseTypes] = useState<ExpenseTypeOption[]>([]);
   const [selectedOwnerId, setSelectedOwnerId] = useState(user.ownerId || "");
   const [ownerEditingId, setOwnerEditingId] = useState("");
+  const [ownerSaveStatus, setOwnerSaveStatus] = useState<{ id: string; error: boolean; text: string } | null>(null);
   const [creatingOwner, setCreatingOwner] = useState(false);
   const [expenseEditingId, setExpenseEditingId] = useState("");
   const [propertyEditingId, setPropertyEditingId] = useState("");
@@ -556,6 +557,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     event.preventDefault();
     setBusy("owner");
     setError("");
+    setOwnerSaveStatus(null);
     try {
       const taxFlags = Object.fromEntries(Array.from(ownerForm.taxFlags).map((flag) => [flag, true]));
       const body = {
@@ -584,10 +586,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       setCreatingOwner(false);
       setOwnerEditingId(result.owner._id);
       setSelectedOwnerId(result.owner._id);
+      setOwnerSaveStatus({ id: result.owner._id, error: false, text: "Owner settings saved." });
       await loadData();
-      flash("Owner saved.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save owner.");
+      setOwnerSaveStatus({ id: ownerEditingId, error: true, text: err instanceof Error ? err.message : "Unable to save owner." });
     } finally {
       setBusy("");
     }
@@ -1317,7 +1319,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
     try {
       if (action === "delete") {
-        if (!window.confirm("Delete this row from MongoDB?")) return;
+        if (!window.confirm(kind === "recurring" ? "Remove this charge from this statement month?" : "Delete this row from MongoDB?")) return;
         await api("/api/statement-items", {
           method: "DELETE",
           body: JSON.stringify({ ownerId, kind, id })
@@ -2250,15 +2252,32 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 <div className="charge-section">
                   <div className="charge-heading">
                     <strong>Date range recurring</strong>
-                    <button className="secondary-action small" type="button" onClick={() => addArrayRow("dateRangeRecurringCharges", { startDate: "", endDate: "", label: "", amount: 0 })}>
+                    <button className="secondary-action small" type="button" onClick={() => addArrayRow("dateRangeRecurringCharges", { startDate: "", endDate: "", label: "", amount: 0, schedule: "monthly" })}>
                       <Plus size={16} />
                       Add
                     </button>
                   </div>
-                  {parseFormArray<{ startDate?: string; endDate?: string; label?: string; amount?: number | string }>(ownerForm.dateRangeRecurringCharges).map((charge, index) => (
-                    <div className="charge-row four" key={`range-${index}`}>
-                      <input value={charge.startDate || ""} onChange={(event) => updateArrayField("dateRangeRecurringCharges", index, "startDate", event.target.value)} placeholder="Start date" />
-                      <input value={charge.endDate || ""} onChange={(event) => updateArrayField("dateRangeRecurringCharges", index, "endDate", event.target.value)} placeholder="End date" />
+                  {parseFormArray<{ startDate?: string; endDate?: string; label?: string; amount?: number | string; schedule?: "monthly" | "annual" }>(ownerForm.dateRangeRecurringCharges).map((charge, index) => (
+                    <div className="charge-row" key={`range-${index}`}>
+                      <details>
+                        <summary>{charge.startDate && charge.endDate ? `${charge.startDate} to ${charge.endDate}` : "Choose dates"}</summary>
+                        <fieldset>
+                          <legend>Charge date range</legend>
+                          <label>Start date
+                            <input type="date" required value={charge.startDate || ""} onChange={(event) => updateArrayField("dateRangeRecurringCharges", index, "startDate", event.target.value)} />
+                          </label>
+                          <label>End date
+                            <input type="date" required min={charge.startDate || undefined} value={charge.endDate || ""} onChange={(event) => updateArrayField("dateRangeRecurringCharges", index, "endDate", event.target.value)} />
+                          </label>
+                          <label>Frequency
+                            <select value={charge.schedule || ""} onChange={(event) => updateArrayField("dateRangeRecurringCharges", index, "schedule", event.target.value)}>
+                              <option value="">Once per statement in range</option>
+                              <option value="monthly">Monthly during these dates</option>
+                              <option value="annual">Monthly, repeat every year</option>
+                            </select>
+                          </label>
+                        </fieldset>
+                      </details>
                       <input value={charge.label || ""} onChange={(event) => updateArrayField("dateRangeRecurringCharges", index, "label", event.target.value)} placeholder="Label" />
                       <input value={String(charge.amount ?? "")} onChange={(event) => updateArrayField("dateRangeRecurringCharges", index, "amount", event.target.value)} inputMode="decimal" placeholder="Amount" />
                       <button className="icon-button danger" type="button" onClick={() => removeArrayRow("dateRangeRecurringCharges", index)} title="Remove charge">
@@ -2292,6 +2311,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   <Save size={18} />
                   {creatingOwner ? "Create owner" : "Save owner"}
                 </button>
+                {ownerSaveStatus?.id === ownerEditingId && (
+                  <p role={ownerSaveStatus.error ? "alert" : "status"}>{ownerSaveStatus.text}</p>
+                )}
                 {creatingOwner && (
                   <button className="secondary-action" type="button" onClick={cancelCreateOwner}>
                     <X size={18} />

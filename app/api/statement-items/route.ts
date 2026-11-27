@@ -4,11 +4,13 @@ import { assertAdmin } from "@/lib/auth";
 import { connectDb } from "@/lib/db";
 import { Expense, GuestyCache, Owner, ReservationOverride } from "@/lib/models";
 import { fail, ok } from "@/lib/http";
+import { findFinalStatement } from "@/lib/locked-statement-store";
+import { recurringExpenses } from "@/lib/reporting/reports";
+import type { OwnerLike } from "@/lib/types";
 
 export const runtime = "nodejs";
 
 const kindSchema = z.enum(["reservation", "expense", "recurring"]);
-const recurringArrays = ["recurringCharges", "monthlyRecurringCharges", "specificDateRecurringCharges", "dateRangeRecurringCharges"] as const;
 
 const schema = z.object({
   ownerId: z.string(),
@@ -92,36 +94,29 @@ async function updateReservation(
   );
 }
 
-async function updateRecurring(ownerId: string, id: string, values: Record<string, string | number>) {
-  const [arrayName, rawIndex] = id.split(":");
-  if (!recurringArrays.includes(arrayName as (typeof recurringArrays)[number])) {
-    throw Object.assign(new Error("Recurring charge not found."), { status: 404 });
-  }
-  const index = Number(rawIndex);
-  const owner = await Owner.findById(ownerId);
-  const items = owner?.[arrayName];
-  if (!owner || !Array.isArray(items) || !items[index]) {
-    throw Object.assign(new Error("Recurring charge not found."), { status: 404 });
+async function updateRecurring(ownerId: string, id: string, values?: Record<string, string | number>) {
+  const match = /^recurring:((\d{4})-(1[0-2]|[1-9])-[a-f0-9]{64})$/.exec(id);
+  if (!match) throw Object.assign(new Error("Refresh the statement and try again."), { status: 400 });
+  const [, key, yearText, monthText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  if (await findFinalStatement(ownerId, year, month)) {
+    throw Object.assign(new Error("Use the locked statement controls to modify this month."), { status: 409 });
   }
 
-  if (Object.keys(values).length) {
-    if (values.type !== undefined) items[index].label = String(values.type);
-    if (values.amount !== undefined) items[index].amount = numberValue(values.amount);
-    if (values.period !== undefined) {
-      const period = splitPeriod(values.period);
-      if (period.month) items[index].month = period.month;
-      if (period.year) items[index].year = period.year;
-    }
-    if (values.month !== undefined) items[index].month = numberValue(values.month);
-    if (values.day !== undefined) items[index].day = numberValue(values.day);
-    if (values.startDate !== undefined) items[index].startDate = String(values.startDate);
-    if (values.endDate !== undefined) items[index].endDate = String(values.endDate);
-  } else {
-    items.splice(index, 1);
+  const owner = await Owner.findById(ownerId).lean();
+  const start = `${yearText}-${monthText.padStart(2, "0")}-01`;
+  const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+  if (!owner || !recurringExpenses(owner as unknown as OwnerLike, start, end, true).some((line) => line._id === id)) {
+    throw Object.assign(new Error("Recurring charge not found. Refresh the statement and try again."), { status: 404 });
   }
 
-  owner.markModified(arrayName);
-  await owner.save();
+  const path = `recurringStatementOverrides.${key}`;
+  const updates: Record<string, string | number | boolean> = { [`${path}.deleted`]: !values };
+  if (values?.type !== undefined) updates[`${path}.type`] = String(values.type);
+  if (values?.amount !== undefined) updates[`${path}.amount`] = numberValue(values.amount);
+  if (values?.note !== undefined) updates[`${path}.notes`] = String(values.note);
+  await Owner.updateOne({ _id: ownerId }, { $set: updates });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -186,7 +181,7 @@ export async function DELETE(req: NextRequest) {
       await ReservationOverride.deleteOne({ ownerId: body.ownerId, reservationId: body.id });
     }
     if (body.kind === "expense") await Expense.deleteOne({ _id: body.id, ownerId: body.ownerId });
-    if (body.kind === "recurring") await updateRecurring(body.ownerId, body.id, {});
+    if (body.kind === "recurring") await updateRecurring(body.ownerId, body.id);
 
     return ok({ ok: true });
   } catch (error) {
