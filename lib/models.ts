@@ -31,6 +31,7 @@ const dateRangeChargeSchema = new Schema(
   {
     startDate: { type: String, required: true },
     endDate: { type: String, required: true },
+    schedule: { type: String, enum: ["monthly", "annual"] },
     label: { type: String, required: true },
     amount: { type: Number, required: true, default: 0 }
   },
@@ -95,7 +96,8 @@ const ownerSchema = new Schema(
     recurringCharges: { type: [chargeSchema], default: [] },
     monthlyRecurringCharges: { type: [monthlyChargeSchema], default: [] },
     specificDateRecurringCharges: { type: [specificDateChargeSchema], default: [] },
-    dateRangeRecurringCharges: { type: [dateRangeChargeSchema], default: [] }
+    dateRangeRecurringCharges: { type: [dateRangeChargeSchema], default: [] },
+    recurringStatementOverrides: { type: Schema.Types.Mixed }
   },
   { timestamps: true, versionKey: false }
 );

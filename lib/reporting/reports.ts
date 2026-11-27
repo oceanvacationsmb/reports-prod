@@ -189,7 +189,7 @@ function overlaps(startA: string, endA: string, startB: string, endB: string) {
   return a1 <= b2 && b1 <= a2;
 }
 
-export function recurringExpenses(owner: OwnerLike, startDate: string, endDate: string) {
+export function recurringExpenses(owner: OwnerLike, startDate: string, endDate: string, applyStatementOverrides = false) {
   const charges: ExpenseLike[] = [];
   const start = parseDate(startDate);
   const end = parseDate(endDate);
@@ -257,21 +257,63 @@ export function recurringExpenses(owner: OwnerLike, startDate: string, endDate: 
   }
 
   for (const [index, charge] of (owner.dateRangeRecurringCharges || []).entries()) {
-    if (!overlaps(charge.startDate, charge.endDate, startDate, endDate)) continue;
-    charges.push({
-      _id: `dateRangeRecurringCharges:${index}`,
-      ownerId: String(owner._id || owner.id || ""),
-      property: "Recurring",
-      type: charge.label,
-      amount: charge.amount,
-      month,
-      year,
-      vendor: "Recurring",
-      notes: `${charge.startDate} to ${charge.endDate}`
-    });
+    for (const period of charge.schedule ? recurringMonths : [{ year, month }]) {
+      const monthStart = new Date(Date.UTC(period.year, period.month - 1, 1)).toISOString().slice(0, 10);
+      const monthEnd = new Date(Date.UTC(period.year, period.month, 0)).toISOString().slice(0, 10);
+      const periodStart = charge.schedule && monthStart > startDate ? monthStart : startDate;
+      const periodEnd = charge.schedule && monthEnd < endDate ? monthEnd : endDate;
+      const from = charge.startDate.slice(5);
+      const through = charge.endDate.slice(5);
+      const firstDay = periodStart.slice(5);
+      const lastDay = periodEnd.slice(5);
+      const applies = charge.schedule === "annual"
+        ? from <= through
+          ? from <= lastDay && firstDay <= through
+          : from <= lastDay || firstDay <= through
+        : overlaps(charge.startDate, charge.endDate, periodStart, periodEnd);
+      if (!applies) continue;
+      charges.push({
+        _id: `dateRangeRecurringCharges:${index}`,
+        ownerId: String(owner._id || owner.id || ""),
+        property: "Recurring",
+        type: charge.label,
+        amount: charge.amount,
+        ...period,
+        vendor: "Recurring",
+        notes: charge.schedule === "annual" ? `${from} to ${through} each year` : `${charge.startDate} to ${charge.endDate}`
+      });
+    }
   }
 
-  return charges;
+  if (!applyStatementOverrides) return charges;
+
+  const rules = {
+    recurringCharges: owner.recurringCharges || [],
+    monthlyRecurringCharges: owner.monthlyRecurringCharges || [],
+    specificDateRecurringCharges: owner.specificDateRecurringCharges || [],
+    dateRangeRecurringCharges: owner.dateRangeRecurringCharges || []
+  };
+  return charges.flatMap((charge) => {
+    const [kind, index] = charge._id!.split(":");
+    const items = rules[kind as keyof typeof rules];
+    const signature = (item: (typeof items)[number]) => JSON.stringify([
+      item.label, item.amount, "month" in item ? item.month : null, "day" in item ? item.day : null,
+      "startDate" in item ? [item.startDate, item.endDate, item.schedule] : null
+    ]);
+    const identity = signature(items[Number(index)]);
+    const duplicate = items.slice(0, Number(index)).filter((item) => signature(item) === identity).length;
+    const hash = crypto.createHash("sha256").update(JSON.stringify([kind, identity, duplicate])).digest("hex");
+    const key = `${charge.year}-${charge.month}-${hash}`;
+    const adjustment = owner.recurringStatementOverrides?.[key];
+    if (adjustment?.deleted) return [];
+    return [{
+      ...charge,
+      _id: `recurring:${key}`,
+      type: adjustment?.type ?? charge.type,
+      amount: adjustment?.amount ?? charge.amount,
+      notes: adjustment?.notes ?? charge.notes
+    }];
+  });
 }
 
 function filterRows(rows: NormalizedReservation[], request: ReportRequest, startDate: string, endDate: string) {
@@ -1050,7 +1092,7 @@ export function buildOwnerReport(
   const filteredExpenses = filterExpenses(rawExpenses, request, period.startDate, period.endDate);
   const recurring = Array.isArray(request.recurringOverride)
     ? overrideRecurring(owner, request, request.recurringOverride)
-    : recurringExpenses(owner, period.startDate, period.endDate);
+    : recurringExpenses(owner, period.startDate, period.endDate, true);
   const ownerStayRows = reportRows.filter((row) => row.isOwnerStay);
   const ownerStayTotal = ownerStayRows.reduce((sum, row) => sum + ownerStayCharge(row), 0);
   const total = totals(reportRows, filteredExpenses, recurring, ownerStayTotal);

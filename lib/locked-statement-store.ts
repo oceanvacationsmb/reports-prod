@@ -231,7 +231,7 @@ async function computeStatement(ownerId: string, year: number, month: number, re
   );
   const recurring = recurringOverride
     ? recurringOverride.map((line) => ({ label: line.label, amount: cents(line.amount), property: line.property || "Recurring" }))
-    : recurringExpenses(owner, period.startDate, period.endDate).map((expense) => ({
+    : recurringExpenses(owner, period.startDate, period.endDate, true).map((expense) => ({
         label: expense.type,
         amount: numberValue(expense.amount),
         property: expense.property || "Recurring"
