@@ -7,6 +7,7 @@ import { getGuestyReservations } from "@/lib/guesty";
 import { asPlain, fail, ok } from "@/lib/http";
 import { listFinalMonths, reportFromFinal, statementAvailability, statementHistory } from "@/lib/locked-statement-store";
 import { normalizeBasis } from "@/lib/reporting/ten-ninety-nine";
+import { isGriProperty } from "@/lib/reporting/report-options";
 import { getSettings } from "@/lib/settings";
 import { reservationQueryForPeriod } from "@/lib/reporting/reservation-query";
 import { buildAllOwnersTaxReport, buildOwnerReport, buildSummaryReport, periodFromRequest } from "@/lib/reporting/reports";
@@ -50,6 +51,9 @@ export async function POST(req: NextRequest) {
     const body = schema.parse(await req.json());
     if (body.reportKey === "gri" && !body.property) {
       throw Object.assign(new Error("Property is required for GRI reports."), { status: 400 });
+    }
+    if (body.reportKey === "gri" && !isGriProperty(body.property)) {
+      throw Object.assign(new Error("This property is unavailable for GRI reports."), { status: 400 });
     }
     const period = periodFromRequest(body);
     if (body.reportKey === "splitCleaning" && period.startDate > period.endDate) {
