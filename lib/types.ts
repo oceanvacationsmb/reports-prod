@@ -72,6 +72,7 @@ export type ExpenseLike = {
 };
 
 export type PropertyLike = {
+  excludeFromTaxReport?: boolean;
   _id?: string;
   id?: string;
   name: string;

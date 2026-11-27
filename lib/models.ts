@@ -149,6 +149,7 @@ const invoiceFileSchema = new Schema(
 
 const propertySchema = new Schema(
   {
+    excludeFromTaxReport: { type: Boolean, default: false },
     name: { type: String, required: true, unique: true, trim: true },
     reportAddress: { type: String, default: "", trim: true },
     street: { type: String, default: "", trim: true },

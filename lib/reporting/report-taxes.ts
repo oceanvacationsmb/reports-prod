@@ -140,11 +140,13 @@ export function buildPropertyTaxReport(
       .filter(includeStay);
 
     for (const row of rows) {
+      const property = catalogProperty(properties, row.property);
+      if (property?.excludeFromTaxReport) continue;
       const key = stayKey(row);
       if (seen.has(key)) continue;
       seen.add(key);
       reservationsUsed += 1;
-      const propertyName = catalogProperty(properties, row.property)?.name || row.property || "Unassigned";
+      const propertyName = property?.name || row.property || "Unassigned";
       const current = totalsByProperty.get(propertyName.toLowerCase()) || {
         property: propertyName,
         amountToReport: 0,
@@ -159,7 +161,7 @@ export function buildPropertyTaxReport(
   const names = new Map<string, string>();
   for (const property of properties) {
     const name = property.name.trim();
-    if (!name) continue;
+    if (!name || property.excludeFromTaxReport) continue;
     names.set(name.toLowerCase(), name);
   }
   for (const total of totalsByProperty.values()) {
@@ -234,6 +236,7 @@ export function buildFilingActivity(
       .map((row) => calculateReservation(row, owner, settings, { calculationSource: "reports" }))
       .filter(includeStay);
     for (const row of rows) {
+      if (catalogProperty(properties, row.property)?.excludeFromTaxReport) continue;
       const key = stayKey(row);
       if (seen.has(key)) continue;
       seen.add(key);
