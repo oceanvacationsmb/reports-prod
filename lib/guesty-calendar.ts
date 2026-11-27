@@ -44,6 +44,7 @@ export type GuestyCalendarRate = {
   date: string;
   rate: number;
   currency: string;
+  minNights?: number;
 };
 
 let pendingToken: Promise<GuestyToken> | null = null;
@@ -305,7 +306,13 @@ async function fetchCalendarRates(listingId: string, year: number, month: number
     const date = text(day.date).slice(0, 10);
     const rate = typeof day.price === "number" ? day.price : Number(day.price);
     if (!available || !date || !Number.isFinite(rate)) return [];
-    return [{ date, rate, currency: text(day.currency) || "USD" }];
+    const minNights = day.minNights;
+    return [{
+      date,
+      rate,
+      currency: text(day.currency) || "USD",
+      ...(typeof minNights === "number" && Number.isInteger(minNights) && minNights > 0 ? { minNights } : {})
+    }];
   });
 
   return rates;
