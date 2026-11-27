@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { Download, Printer } from "lucide-react";
-import { reportYearChoices } from "@/lib/reporting/report-options";
+import { isGriProperty, reportYearChoices } from "@/lib/reporting/report-options";
 
 type OwnerChoice = {
   _id: string;
@@ -41,7 +41,7 @@ export function SimpleReportsPage({ owners, onEditOwner }: { owners: OwnerChoice
 
   const owner = owners.find((item) => item._id === ownerId);
   const properties = useMemo(() => {
-    const names = (owner?.properties || []).map((name) => name.trim()).filter(Boolean);
+    const names = (owner?.properties || []).map((name) => name.trim()).filter(isGriProperty);
     return [...new Set(names)].sort((left, right) => left.localeCompare(right, "en", { numeric: true, sensitivity: "base" }));
   }, [owner]);
 

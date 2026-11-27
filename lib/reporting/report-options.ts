@@ -1,4 +1,9 @@
 const ignoredPropertyNames = new Set(["", "owner", "recurring", "unassigned"]);
+const griProperties = ["MB - Tuscan A", "MB - Tuscan B", "MB - Tuscan C", "NMB - 400A", "NMB - 400B", "NMB - 304B"];
+
+export function isGriProperty(name: string | undefined) {
+  return griProperties.some((property) => sameProperty(property, name));
+}
 
 export function sameProperty(left: string | undefined, right: string | undefined) {
   const normalize = (value: string | undefined) => (value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
