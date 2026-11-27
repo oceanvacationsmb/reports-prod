@@ -37,7 +37,7 @@ type PortalData = {
 type CalendarPricing = {
   configured: boolean;
   connected: boolean;
-  rates: Array<{ date: string; rate: number; currency: string }>;
+  rates: Array<{ date: string; rate: number; currency: string; minNights?: number }>;
   cached?: boolean;
   stale?: boolean;
   throttled?: boolean;
@@ -345,7 +345,14 @@ export function OwnerPortal({ user }: { user: SessionUser }) {
                   {cell.day && <strong>{cell.day}</strong>}
                   {reservation && <span>{reservation.sourceLabel}</span>}
                   {ownerStay && !reservation && <span>Owner</span>}
-                  {availableRate && <span>{rateLabel(availableRate.rate, availableRate.currency)}</span>}
+                  {availableRate && (
+                    <>
+                      <span>{rateLabel(availableRate.rate, availableRate.currency)}</span>
+                      {availableRate.minNights !== undefined && (
+                        <span>{availableRate.minNights} {availableRate.minNights === 1 ? "night" : "nights"} min</span>
+                      )}
+                    </>
+                  )}
                   {isNew && <em>New</em>}
                 </div>
               );
