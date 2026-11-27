@@ -53,6 +53,21 @@ const properties: PropertyLike[] = [
 ];
 
 describe("property tax report", () => {
+  it("omits explicitly excluded properties and their collected taxes", () => {
+    const listed = owner("listed", "Listed owner", ["Excluded", "Included"]);
+    const reservations = new Map([["listed", [
+      stay({ id: "excluded", property: "Excluded", source: "VRBO", platform: "HomeAway", totalPayout: 550, rowTaxTotal: 50 })
+    ]]]);
+    const report = buildPropertyTaxReport([listed], reservations, settings, 10, 2026, [
+      { name: "Excluded", excludeFromTaxReport: true },
+      { name: "Included" }
+    ]);
+    assert.deepEqual(report.groups.flatMap((group) => group.rows.map((row) => row.property)), ["Included"]);
+    assert.equal(report.amountToReport, 0);
+    assert.equal(report.totalTax, 0);
+    assert.equal(report.reservationsUsed, 0);
+  });
+
   it("keeps October NMB - 3104-2 at gross minus tax, separate from GC - 1463", () => {
     const jacob = owner("jacob", "3104 - RIVER", ["NMB - 3104-2", "NMB - 3104-1"]);
     const nicole = owner("nicole", "1463 - CASEY", ["GC - 1463"]);

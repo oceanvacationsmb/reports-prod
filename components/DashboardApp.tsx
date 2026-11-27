@@ -88,6 +88,7 @@ type SavedReport = {
 };
 
 type Property = {
+  excludeFromTaxReport?: boolean;
   _id: string;
   name: string;
   reportAddress?: string;
@@ -268,6 +269,7 @@ type OwnerArrayField =
   | "cleaningCaps";
 
 const emptyPropertyForm = {
+  excludeFromTaxReport: false,
   name: "",
   reportAddress: "",
   street: "",
@@ -1509,6 +1511,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           managedTo: propertyForm.managedTo,
           jurisdictionId: propertyForm.jurisdictionId,
           municipality: propertyForm.municipality,
+          excludeFromTaxReport: propertyForm.excludeFromTaxReport,
           taxFlags: flags
         })
       });
@@ -1538,6 +1541,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       managedTo: property.managedTo || "",
       jurisdictionId: property.jurisdictionId || "",
       municipality: property.municipality || "",
+      excludeFromTaxReport: Boolean(property.excludeFromTaxReport),
       taxFlags: new Set(Object.entries(property.taxFlags || {}).filter(([, enabled]) => enabled).map(([flag]) => flag))
     });
   }
@@ -2835,6 +2839,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </label>
                   ))}
                 </div>
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={propertyForm.excludeFromTaxReport}
+                    onChange={(event) => setPropertyForm({ ...propertyForm, excludeFromTaxReport: event.target.checked })}
+                  />
+                  Exclude from tax report
+                </label>
                 <button className="secondary-action">
                   <Save size={17} />
                   {propertyEditingId ? "Update tax settings" : "Save tax settings"}

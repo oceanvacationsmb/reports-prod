@@ -84,7 +84,7 @@ export function prepareFiling(input: {
 
   for (const property of input.properties) {
     const key = property.name.trim().toLowerCase();
-    if (!key || seen.has(key)) continue;
+    if (!key || seen.has(key) || property.excludeFromTaxReport) continue;
     seen.add(key);
     const activity = activityByName.get(key) || { property: property.name, amountToReport: 0, longStay30: 0, longStay90: 0 };
     const active = propertyActiveInMonth(property, input.year, input.month);

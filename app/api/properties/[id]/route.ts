@@ -6,6 +6,7 @@ import { Property } from "@/lib/models";
 import { asPlain, fail, ok } from "@/lib/http";
 
 const patchSchema = z.object({
+  excludeFromTaxReport: z.boolean().optional(),
   name: z.string().min(1).optional(),
   reportAddress: z.string().optional(),
   street: z.string().optional(),
