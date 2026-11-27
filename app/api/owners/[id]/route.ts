@@ -16,6 +16,7 @@ const taxFlags = z.object({
 });
 
 const patchSchema = z.object({
+  archived: z.boolean().optional(),
   name: z.string().min(1).optional(),
   email: z.string().optional(),
   type: z.enum(["draft", "payout", "split"]).optional(),

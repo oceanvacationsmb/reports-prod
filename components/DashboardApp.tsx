@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   Building2,
@@ -25,9 +25,7 @@ import {
   Mail,
   Pencil,
   Printer,
-  Receipt,
-  Send,
-  TrendingUp
+  Send
 } from "lucide-react";
 import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
@@ -43,6 +41,7 @@ import type { ReportKey, SessionUser } from "@/lib/types";
 type Owner = {
   _id: string;
   name: string;
+  archived?: boolean;
   email?: string;
   type: "draft" | "payout" | "split";
   percent?: number;
@@ -176,7 +175,7 @@ type LockResponse = {
   report: ReportResponse;
 };
 
-type TabKey = "reports" | "taxes" | "simpleReports" | "income" | "owners" | "expenses" | "saved" | "settings";
+type TabKey = "reports" | "taxes" | "simpleReports" | "income" | "owners" | "expenses" | "saved" | "settings" | "archive";
 
 const reportOptions: { key: ReportKey; label: string; adminOnly?: boolean }[] = [
   { key: "statement", label: "Statement" },
@@ -369,9 +368,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [batchSkipped, setBatchSkipped] = useState<BatchRecipient[]>([]);
   const amountRefs = useRef<Array<HTMLInputElement | null>>([]);
   const reportPreviewRef = useRef<HTMLDivElement | null>(null);
+  const statementScroll = useRef<{ top: number; left: number } | null>(null);
+  const [statementRowStatus, setStatementRowStatus] = useState("");
   const propertySettingsRef = useRef<HTMLFormElement | null>(null);
 
-  const visibleOwners = useMemo(() => owners.filter((owner) => !isAggregateOwner(owner)), [owners]);
+  const visibleOwners = useMemo(() => owners.filter((owner) => !owner.archived && !isAggregateOwner(owner)), [owners]);
+  const archivedOwners = owners.filter((owner) => owner.archived && !isAggregateOwner(owner));
   const reportSupportsFullYear = reportForm.reportKey === "income" || reportForm.reportKey === "gri" || reportForm.reportKey === "1099";
   const reportRequiresFullYear = reportForm.reportKey === "1099";
   const reportUsesDateRange = reportForm.reportKey === "splitCleaning";
@@ -394,17 +396,16 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
   const tabs = [
     { key: "reports" as const, label: "Statements", icon: BarChart3 },
-    { key: "taxes" as const, label: "Taxes", icon: Receipt },
     { key: "simpleReports" as const, label: "Reports", icon: FileText },
+    ...(isAdmin ? [{ key: "settings" as const, label: "Settings", icon: Settings }] : []),
     ...(isAdmin
       ? [
-          { key: "income" as const, label: "Income", icon: TrendingUp },
-          { key: "owners" as const, label: "Owners", icon: Building2 }
+          { key: "owners" as const, label: "Owners", icon: Building2 },
+          { key: "archive" as const, label: "Archive properties", icon: FileArchive }
         ]
       : []),
     { key: "expenses" as const, label: "Expenses", icon: CircleDollarSign },
-    { key: "saved" as const, label: "Saved", icon: FileArchive },
-    ...(isAdmin ? [{ key: "settings" as const, label: "Settings", icon: Settings }] : [])
+    { key: "saved" as const, label: "Saved", icon: FileArchive }
   ];
 
   async function loadData() {
@@ -420,7 +421,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         api<{ expenseTypes: ExpenseTypeOption[] }>("/api/expense-types"),
         api<{ settings: { guestyCacheTtlMinutes: number; defaultCleaningCaps: unknown[]; tenNinetyNineBasis?: string } }>("/api/settings")
       ]);
-      const visibleOwnerData = ownerData.owners.filter((owner) => !isAggregateOwner(owner));
+      const visibleOwnerData = ownerData.owners.filter((owner) => !owner.archived && !isAggregateOwner(owner));
       setOwners(ownerData.owners);
       setExpenses(expenseData.expenses);
       setSavedReports(savedData.savedReports);
@@ -440,6 +441,37 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       setBusy("");
     }
   }
+
+  async function setOwnerArchived(owner: Owner, archived: boolean) {
+    setBusy("archive-owner");
+    setError("");
+    try {
+      const { owner: savedOwner } = await api<{ owner: Owner }>(`/api/owners/${owner._id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ archived })
+      });
+      setOwners((current) => current.map((item) => item._id === savedOwner._id ? savedOwner : item));
+      if (archived) {
+        setSelectedOwnerId("");
+        setOwnerEditingId("");
+        setCurrentReport(null);
+        setCurrentSavedReport(null);
+        setStatementLock(null);
+        setTab("archive");
+      }
+      flash(archived ? "Owner properties archived." : "Owner properties restored.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update the owner archive.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  useLayoutEffect(() => {
+    if (!statementScroll.current) return;
+    window.scrollTo({ ...statementScroll.current, behavior: "instant" });
+    statementScroll.current = null;
+  }, [currentReport]);
 
   useEffect(() => {
     loadData();
@@ -719,7 +751,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     await runReport();
   }
 
-  async function runReport(overrides?: { reportKey?: ReportKey; month?: string }) {
+  async function runReport(overrides?: { reportKey?: ReportKey; month?: string; preservePosition?: boolean }) {
     const reportKey = overrides?.reportKey || reportForm.reportKey;
     const monthField = overrides?.month || reportForm.month;
     if (overrides) {
@@ -732,10 +764,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     setBusy("report");
     setError("");
     setEmailConfirm(false);
-    setCurrentReport(null);
-    setCurrentSavedReport(null);
-    setStatementLock(null);
-    setModifyOpen(false);
+    if (!overrides?.preservePosition) {
+      setCurrentReport(null);
+      setCurrentSavedReport(null);
+      setStatementLock(null);
+      setModifyOpen(false);
+      setStatementRowStatus("");
+    }
     try {
       const month = monthField === "full-year" ? undefined : Number(monthField);
       const { startDate, endDate, ...form } = reportForm;
@@ -761,6 +796,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         method: "POST",
         body: JSON.stringify(body)
       });
+      if (overrides?.preservePosition) {
+        statementScroll.current = { top: window.scrollY, left: window.scrollX };
+        setCurrentSavedReport(null);
+        setStatementRowStatus("Statement row updated.");
+      }
       setCurrentReport(data.report);
       if (reportKey === "statement" && month) {
         setStatementLock({
@@ -778,7 +818,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         });
         setUnlockOpen(false);
       }
-      flash("Report generated.");
+      if (!overrides?.preservePosition) flash("Report generated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to generate report.");
     } finally {
@@ -1334,8 +1374,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         return;
       }
       await loadData();
-      await runReport();
-      flash("Statement row updated.");
+      await runReport({ preservePosition: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update statement row.");
     }
@@ -1398,8 +1437,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       });
       setStatementEdit(null);
       await loadData();
-      await runReport();
-      flash("Statement row updated.");
+      await runReport({ preservePosition: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update statement row.");
     }
@@ -1653,7 +1691,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     )
     .sort((a, b) => a.property.localeCompare(b.property) || a.type.localeCompare(b.type));
   const reportIsAdminOnly = ["summary", "allOwnersTax"].includes(reportForm.reportKey);
-  const moreTabKeys = new Set(["owners", "expenses", "saved", "settings"]);
+  const moreTabKeys = new Set(["expenses", "saved", "archive"]);
+  const reportSectionActive = tab === "simpleReports" || tab === "taxes" || tab === "income";
   const includedRecipients = batchRecipients.filter((recipient) => recipient.included);
   const skippedRecipients = [
     ...batchRecipients.filter((recipient) => !recipient.included),
@@ -1667,13 +1706,15 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           <Home size={22} />
           <span>Ocean</span>
         </div>
-        <nav>
+        <nav aria-label="Dashboard">
           {tabs.map((item) => {
             const Icon = item.icon;
+            const active = tab === item.key || (item.key === "simpleReports" && reportSectionActive);
             return (
               <button
                 key={item.key}
-                className={`${tab === item.key ? "active" : ""} ${moreTabKeys.has(item.key) ? "more-tab" : ""}`}
+                className={`${active ? "active" : ""} ${moreTabKeys.has(item.key) ? "more-tab" : ""}`}
+                aria-current={active ? "page" : undefined}
                 onClick={() => {
                   setMoreOpen(false);
                   setTab(item.key);
@@ -1732,11 +1773,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   ? "Taxes"
                   : tab === "simpleReports"
                     ? "Reports"
-                    : selectedOwner?.name || user.displayName || "Reports"}
+                    : tab === "archive" ? "Archive properties" : selectedOwner?.name || user.displayName || "Reports"}
             </h1>
           </div>
           <div className="topbar-actions">
-            {isAdmin && tab !== "income" && tab !== "taxes" && tab !== "simpleReports" && (
+            {isAdmin && !reportSectionActive && tab !== "archive" && (
               <select value={selectedOwnerId} onChange={(event) => setSelectedOwnerId(event.target.value)}>
                 <option value="">All owners</option>
                 {visibleOwners.map((owner) => (
@@ -1756,6 +1797,26 @@ export function DashboardApp({ user }: { user: SessionUser }) {
               <X size={16} />
             </button>
           </div>
+        )}
+
+        {reportSectionActive && (
+          <nav className="report-section-nav" aria-label="Reports">
+            {([
+              ["simpleReports", "GRI"],
+              ["taxes", "Taxes"],
+              ...(isAdmin ? [["income", "Income"]] as const : [])
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={tab === key ? "primary-action" : "secondary-action"}
+                aria-current={tab === key ? "page" : undefined}
+                onClick={() => setTab(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
         )}
 
         {tab === "taxes" && <TaxesPage />}
@@ -2081,6 +2142,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </div>
                   </form>
                 )}
+                <div className="statement-row-status" role="status">{statementRowStatus}</div>
                 <div ref={reportPreviewRef} className="report-preview" dangerouslySetInnerHTML={{ __html: currentReport.html }} />
               </section>
             )}
@@ -2088,6 +2150,31 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         )}
 
         {tab === "income" && isAdmin && <AdminIncome />}
+
+        {tab === "archive" && isAdmin && (
+          <section className="editor-panel property-archive">
+            {archivedOwners.length ? (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Owner</th><th>Properties</th><th>Action</th></tr></thead>
+                  <tbody>
+                    {archivedOwners.map((owner) => (
+                      <tr key={owner._id}>
+                        <td>{owner.name}</td>
+                        <td>{owner.properties?.length ? owner.properties.join(", ") : "No properties assigned"}</td>
+                        <td>
+                          <button type="button" className="secondary-action small" disabled={busy === "archive-owner"} onClick={() => void setOwnerArchived(owner, false)}>
+                            Restore
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p>No archived owner properties.</p>}
+          </section>
+        )}
 
         {tab === "owners" && isAdmin && (
           <section className="split-view single-view">
@@ -2313,6 +2400,16 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 </button>
                 {ownerSaveStatus?.id === ownerEditingId && (
                   <p role={ownerSaveStatus.error ? "alert" : "status"}>{ownerSaveStatus.text}</p>
+                )}
+                {!creatingOwner && selectedOwner && ownerEditingId === selectedOwner._id && (
+                  <button type="button" className="secondary-action" disabled={Boolean(busy)} onClick={() => {
+                    if (window.confirm(`Archive ${selectedOwner.name} and remove them from the owner dropdowns?`)) {
+                      void setOwnerArchived(selectedOwner, true);
+                    }
+                  }}>
+                    <FileArchive size={18} />
+                    Archive owner
+                  </button>
                 )}
                 {creatingOwner && (
                   <button className="secondary-action" type="button" onClick={cancelCreateOwner}>

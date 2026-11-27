@@ -76,6 +76,7 @@ const userSchema = new Schema(
 const ownerSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
+    archived: { type: Boolean, default: false },
     email: { type: String, default: "", trim: true },
     type: { type: String, enum: ["draft", "payout", "split"], required: true, default: "draft" },
     percent: { type: Number, default: 0 },

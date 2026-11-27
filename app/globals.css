@@ -356,7 +356,7 @@ select:disabled {
 
 .side-nav nav {
   display: grid;
-  gap: 6px;
+  gap: 5px;
 }
 
 .side-nav .nav-more,
@@ -373,7 +373,7 @@ select:disabled {
   column-gap: 12px;
   justify-content: flex-start;
   background: transparent;
-  color: rgba(255, 253, 247, 0.76);
+  color: rgba(255, 253, 247, 0.9);
   border-color: transparent;
   padding: 0 13px;
   border-radius: var(--radius);
@@ -393,6 +393,23 @@ select:disabled {
 
 .logout-button {
   margin-top: auto;
+}
+
+.side-nav nav > button {
+  min-height: 44px;
+  text-align: left;
+}
+
+.report-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.statement-row-status {
+  min-height: 1.5em;
+  color: var(--muted);
 }
 
 .workspace {
