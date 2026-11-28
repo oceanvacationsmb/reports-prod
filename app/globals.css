@@ -909,6 +909,82 @@ select:disabled {
   max-width: 100%;
 }
 
+.statement-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.statement-quick-actions {
+  grid-column: 1 / -1;
+}
+
+.statement-report-actions {
+  display: contents;
+}
+
+.statement-quick-actions .secondary-action {
+  min-height: 34px;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 0.8rem;
+}
+
+.statement-quick-actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+.statement-preview-frame {
+  position: relative;
+  min-width: 0;
+}
+
+.statement-draft-badge {
+  position: absolute;
+  z-index: 1;
+  top: 14px;
+  right: 14px;
+  font-size: 0.75rem;
+}
+
+.statement-expense-dialog {
+  width: min(660px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+}
+
+.statement-expense-dialog::backdrop {
+  background: rgba(7, 38, 35, 0.62);
+}
+
+.statement-expense-dialog .editor-panel {
+  border: 0;
+  box-shadow: none;
+}
+
+@media (max-width: 480px) {
+  .statement-preview-frame:has(.statement-draft-badge) {
+    padding-top: 44px;
+  }
+}
+
+@media print {
+  .statement-quick-actions,
+  .statement-draft-badge,
+  .statement-expense-dialog {
+    display: none !important;
+  }
+}
+
 .report-toolbar {
   display: flex;
   align-items: center;

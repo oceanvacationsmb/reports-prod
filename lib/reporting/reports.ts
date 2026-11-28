@@ -939,7 +939,7 @@ function expensesTable(
     <div class="table-wrap">
       <table>
         <thead><tr>${includeProperty ? "<th>Property</th>" : ""}<th>Type</th><th>Note</th><th>Vendor</th><th>Amount</th><th>Invoice</th>${options.readOnly ? "" : "<th>Actions</th>"}</tr></thead>
-        <tbody>${body || `<tr><td colspan="${columnCount}">No ${escapeHtml(title.toLowerCase())} found.</td></tr>`}</tbody>
+        <tbody>${body || `<tr><td colspan="${columnCount}">&nbsp;</td></tr>`}</tbody>
       </table>
     </div>
   `;

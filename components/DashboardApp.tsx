@@ -317,6 +317,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [ownerForm, setOwnerForm] = useState(freshOwnerForm);
   const [expenseFile, setExpenseFile] = useState<File | null>(null);
   const [expenseForm, setExpenseForm] = useState(emptyExpenseForm);
+  const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
+  const [expenseDialogError, setExpenseDialogError] = useState("");
+  const expenseDialogRef = useRef<HTMLDialogElement>(null);
+
+  useLayoutEffect(() => {
+    if (expenseDialogOpen && !expenseDialogRef.current?.open) expenseDialogRef.current?.showModal();
+  }, [expenseDialogOpen]);
   const [reportForm, setReportForm] = useState({
     reportKey: "statement" as ReportKey,
     month: String(new Date().getMonth() + 1),
@@ -648,14 +655,43 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     return data.url;
   }
 
+  function closeExpenseDialog() {
+    expenseDialogRef.current?.close();
+    setExpenseDialogOpen(false);
+    setExpenseDialogError("");
+    setManageExpenseLists(false);
+    setExpenseFile(null);
+  }
+
+  function openExpenseDialog() {
+    setExpenseEditingId("");
+    setExpenseFile(null);
+    setExpenseDialogError("");
+    setManageExpenseLists(false);
+    setExpenseForm({
+      ...emptyExpenseForm,
+      property: reportPropertyOptions.includes(reportForm.property)
+        ? reportForm.property
+        : reportPropertyOptions.length === 1 ? reportPropertyOptions[0] : "OWNER",
+      month: reportForm.month === "full-year" ? emptyExpenseForm.month : reportForm.month,
+      year: reportForm.year
+    });
+    setExpenseDialogOpen(true);
+  }
+
   async function saveExpense(event: React.FormEvent) {
     event.preventDefault();
     if (!selectedOwnerId) {
       setError("Select an owner before saving an expense.");
       return;
     }
+    const refreshStatement = expenseDialogOpen && currentReport && !selectionChanged &&
+      reportForm.reportKey === "statement" && !statementLock?.locked &&
+      (reportForm.month === "full-year" || reportForm.month === expenseForm.month) &&
+      reportForm.year === expenseForm.year;
     setBusy("expense");
     setError("");
+    setExpenseDialogError("");
     try {
       const invoice = await uploadInvoice();
       await api(expenseEditingId ? `/api/expenses/${expenseEditingId}` : "/api/expenses", {
@@ -675,10 +711,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       setExpenseEditingId("");
       setExpenseForm(emptyExpenseForm);
       setExpenseFile(null);
+      if (expenseDialogOpen) closeExpenseDialog();
       await loadData();
+      if (refreshStatement && !(await runReport({ preservePosition: true }))) return;
       flash(expenseEditingId ? "Expense updated." : "Expense saved.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save expense.");
+      (expenseDialogOpen ? setExpenseDialogError : setError)(err instanceof Error ? err.message : "Unable to save expense.");
     } finally {
       setBusy("");
     }
@@ -1650,6 +1688,221 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     )
     .sort((a, b) => a.property.localeCompare(b.property) || a.type.localeCompare(b.type));
   const reportIsAdminOnly = ["summary", "allOwnersTax"].includes(reportForm.reportKey);
+  function renderExpenseForm(inDialog = false) {
+    return (
+      <form className="editor-panel compact" onSubmit={saveExpense}>
+        <div className="panel-heading">
+          <CircleDollarSign size={20} />
+          <h2 id={inDialog ? "statement-expense-title" : undefined}>{expenseEditingId ? "Edit Expense" : "Add Expense"}</h2>
+          {inDialog && <button className="icon-button panel-heading-action" type="button" aria-label="Close expense form" disabled={busy === "expense"} onClick={closeExpenseDialog}><X size={18} /></button>}
+        </div>
+        <div className="form-grid">
+          <label>
+            Apply expense to
+            <select value={expenseForm.property} onChange={(event) => setExpenseForm({ ...expenseForm, property: event.target.value })} required>
+              <option value="OWNER">Owner-level expense</option>
+              {reportPropertyOptions.map((property) => (
+                <option value={property} key={property}>
+                  {property}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Type
+            <select
+              value={expenseForm.type}
+              onChange={(event) => {
+                if (event.target.value === "__add_new__") {
+                  setExpenseTypeEditingId("");
+                  setExpenseTypeForm(emptyExpenseTypeForm);
+                  setManageExpenseLists(true);
+                  return;
+                }
+                setExpenseForm({ ...expenseForm, type: event.target.value });
+              }}
+              required
+            >
+              <option value="">Select type</option>
+              {expenseTypes.map((expenseType) => (
+                <option value={expenseType.name} key={expenseType._id}>
+                  {expenseType.name}
+                </option>
+              ))}
+              <option value="__add_new__">+ Add new type</option>
+            </select>
+          </label>
+          <label>
+            Vendor
+            <select
+              value={expenseForm.vendor}
+              onChange={(event) => {
+                if (event.target.value === "__add_new__") {
+                  setVendorEditingId("");
+                  setVendorForm(emptyVendorForm);
+                  setManageExpenseLists(true);
+                  return;
+                }
+                setExpenseForm({ ...expenseForm, vendor: event.target.value });
+              }}
+            >
+              <option value="">Select vendor</option>
+              {vendors.map((vendor) => (
+                <option value={vendor.name} key={vendor._id}>
+                  {vendor.name}
+                </option>
+              ))}
+              <option value="__add_new__">+ Add new vendor</option>
+            </select>
+          </label>
+          <label>
+            Amount
+            <input value={expenseForm.amount} onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })} inputMode="decimal" required />
+          </label>
+          <label>
+            Month
+            <select value={expenseForm.month} onChange={(event) => setExpenseForm({ ...expenseForm, month: event.target.value })}>
+              {months.map((month, index) => (
+                <option key={month} value={index + 1}>
+                  {month}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Year
+            <input value={expenseForm.year} onChange={(event) => setExpenseForm({ ...expenseForm, year: event.target.value })} inputMode="numeric" />
+          </label>
+        </div>
+        <button className="secondary-action small manage-lists-button" type="button" onClick={() => setManageExpenseLists((current) => !current)}>
+          <SlidersHorizontal size={17} />
+          {manageExpenseLists ? "Close type and vendor manager" : "Manage types and vendors"}
+        </button>
+        {manageExpenseLists && (
+          <div className="expense-lookup-manager">
+            <section>
+              <div className="charge-heading">
+                <strong>Types</strong>
+                <button
+                  className="secondary-action small"
+                  type="button"
+                  onClick={() => {
+                    setExpenseTypeEditingId("");
+                    setExpenseTypeForm(emptyExpenseTypeForm);
+                  }}
+                >
+                  <Plus size={16} />
+                  Add new
+                </button>
+              </div>
+              <div className="lookup-editor-row">
+                <input
+                  value={expenseTypeForm.name}
+                  onChange={(event) => setExpenseTypeForm({ name: event.target.value })}
+                  placeholder="Type name"
+                />
+                <button className="secondary-action small" type="button" onClick={saveExpenseType} disabled={!expenseTypeForm.name.trim() || busy === "expense-type"}>
+                  <Save size={16} />
+                  {expenseTypeEditingId ? "Update" : "Add"}
+                </button>
+              </div>
+              <div className="lookup-list">
+                {expenseTypes.map((expenseType) => (
+                  <div key={expenseType._id}>
+                    <span>{expenseType.name}</span>
+                    <div className="card-actions">
+                      <button className="icon-button" type="button" onClick={() => editExpenseType(expenseType)} title="Edit type">
+                        <Pencil size={16} />
+                      </button>
+                      <button className="icon-button danger" type="button" onClick={() => deleteExpenseType(expenseType._id)} title="Delete type">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section>
+              <div className="charge-heading">
+                <strong>Vendors</strong>
+                <button
+                  className="secondary-action small"
+                  type="button"
+                  onClick={() => {
+                    setVendorEditingId("");
+                    setVendorForm(emptyVendorForm);
+                  }}
+                >
+                  <Plus size={16} />
+                  Add new
+                </button>
+              </div>
+              <div className="lookup-editor-row">
+                <input
+                  value={vendorForm.name}
+                  onChange={(event) => setVendorForm({ ...vendorForm, name: event.target.value })}
+                  placeholder="Vendor name"
+                />
+                <button className="secondary-action small" type="button" onClick={saveVendor} disabled={!vendorForm.name.trim() || busy === "vendor"}>
+                  <Save size={16} />
+                  {vendorEditingId ? "Update" : "Add"}
+                </button>
+              </div>
+              <div className="lookup-list">
+                {vendors.map((vendor) => (
+                  <div key={vendor._id}>
+                    <span>{vendor.name}</span>
+                    <div className="card-actions">
+                      <button className="icon-button" type="button" onClick={() => editVendor(vendor)} title="Edit vendor">
+                        <Pencil size={16} />
+                      </button>
+                      <button className="icon-button danger" type="button" onClick={() => deleteVendor(vendor._id)} title="Delete vendor">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+        <label>
+          Notes
+          <textarea value={expenseForm.notes} onChange={(event) => setExpenseForm({ ...expenseForm, notes: event.target.value })} />
+        </label>
+        <label>
+          Invoice link
+          <input value={expenseForm.invoiceUrl} onChange={(event) => setExpenseForm({ ...expenseForm, invoiceUrl: event.target.value })} />
+        </label>
+        {expenseEditingId && expenseForm.invoiceUrl && (
+          <div className="inline-actions">
+            <button className="secondary-action small" type="button" onClick={() => openInvoice(expenseForm.invoiceUrl)}>
+              View current invoice
+            </button>
+            <button className="secondary-action small danger-text" type="button" onClick={() => setExpenseForm({ ...expenseForm, invoiceUrl: "" })}>
+              Remove invoice
+            </button>
+          </div>
+        )}
+        <label className="file-pick">
+          <Upload size={18} />
+          <span>{expenseFile ? expenseFile.name : expenseEditingId ? "Replace invoice PDF/JPG" : "Upload invoice PDF/JPG"}</span>
+          <input type="file" accept="image/*,application/pdf" onChange={(event) => setExpenseFile(event.target.files?.[0] || null)} />
+        </label>
+        {inDialog && expenseDialogError && <p className="message error" role="alert">{expenseDialogError}</p>}
+        <button className="primary-action" disabled={busy === "expense"}>
+          <Save size={18} />
+          {busy === "expense" ? "Saving..." : expenseEditingId ? "Update expense" : "Save expense"}
+        </button>
+        {expenseEditingId && (
+          <button className="secondary-action" type="button" onClick={() => { setExpenseEditingId(""); setExpenseForm(emptyExpenseForm); setExpenseFile(null); }}>
+            Clear
+          </button>
+        )}
+      </form>
+    );
+  }
+
   const reportSectionActive = ["simpleReports", "taxes", "income", "saved"].includes(tab);
   const settingsSectionActive = ["settings", "owners", "archive", "taxSettings", "toolSettings"].includes(tab);
   const navSections: { key: TabKey; label: string; icon: typeof Home; active: boolean; links: [TabKey, string][] }[] = [
@@ -1842,26 +2095,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 <BarChart3 size={18} />
                 {busy === "report" ? "Generating..." : "Generate"}
               </button>
-              {isAdmin && (
-                <button type="button" className="secondary-action" disabled={!selectedOwnerId} onClick={() => {
-                  setExpenseEditingId("");
-                  setExpenseFile(null);
-                  setExpenseForm({
-                    ...emptyExpenseForm,
-                    month: reportForm.month === "full-year" ? emptyExpenseForm.month : reportForm.month,
-                    year: reportForm.year
-                  });
-                  setTab("expenses");
-                }}>
-                  <Plus size={18} /> Add expense
-                </button>
-              )}
-            </form>
-
-            {currentReport && (
-              <section className="report-stage" inert={busy === "report" || selectionChanged}>
-                <div className="report-toolbar">
-                  <div className="report-actions">
+              <div className="statement-quick-actions">
+                {isAdmin && (
+                  <button type="button" className="secondary-action" disabled={!selectedOwnerId} onClick={openExpenseDialog}>
+                    <Plus size={16} /> Add expense
+                  </button>
+                )}
+                {currentReport && (
+                  <div className="statement-report-actions" inert={busy === "report" || selectionChanged}>
                     {reportForm.reportKey === "statement" && !permanentShareId() && (
                       <button className="secondary-action" type="button" onClick={openMissingReservation}>
                         <Plus size={18} />
@@ -1869,16 +2110,16 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                       </button>
                     )}
                     {!permanentShareId() && (
-                      <button className="secondary-action" onClick={saveReport} disabled={busy === "save-report"}>
+                      <button type="button" className="secondary-action" onClick={saveReport} disabled={busy === "save-report"}>
                         <Save size={18} />
                         {busy === "save-report" ? "Saving..." : "Save snapshot"}
                       </button>
                     )}
-                    <button className="secondary-action" onClick={downloadPdf} disabled={busy === "pdf" || busy === "save-report"}>
+                    <button type="button" className="secondary-action" onClick={downloadPdf} disabled={busy === "pdf" || busy === "save-report"}>
                       <Download size={18} />
                       {busy === "pdf" ? "Downloading..." : "Download PDF"}
                     </button>
-                    <button className="secondary-action" onClick={printPdf} disabled={busy === "print" || busy === "save-report"}>
+                    <button type="button" className="secondary-action" onClick={printPdf} disabled={busy === "print" || busy === "save-report"}>
                       <Printer size={18} />
                       {busy === "print" ? "Opening..." : "Print PDF"}
                     </button>
@@ -1890,7 +2131,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                       <Mail size={18} />
                       {busy === "batch-email" && batchStep === "loading" ? "Loading owners..." : "Email all owners"}
                     </button>
-                    <button className="secondary-action" onClick={openEmailClient} disabled={busy === "email" || busy === "save-report"}>
+                    <button type="button" className="secondary-action" onClick={openEmailClient} disabled={busy === "email" || busy === "save-report"}>
                       <Mail size={18} />
                       {emailButtonLabel()}
                     </button>
@@ -1920,7 +2161,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                       </button>
                     )}
                   </div>
-                </div>
+                )}
+              </div>
+            </form>
+
+            {currentReport && (
+              <section className="report-stage" inert={busy === "report" || selectionChanged}>
                 {statementLock?.locked && (
                   <div className="message statement-lock">
                     <div className="status-pill final">
@@ -1972,15 +2218,11 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </form>
                   </div>
                 )}
-                {statementLock && !statementLock.locked && isAdmin && (
-                  statementLock.previouslySent ? (
+                {statementLock && !statementLock.locked && statementLock.previouslySent && isAdmin && (
                     <div className="message statement-lock">
                       <div className="status-pill draft">Unlocked. Edit this month, then approve it to lock a new snapshot.</div>
                       {statementLock.sentShareId && <a href={`/share/${statementLock.sentShareId}`} target="_blank" rel="noreferrer">Sent version</a>}
                     </div>
-                  ) : (
-                    <div className="status-pill draft">Draft, not sent</div>
-                  )
                 )}
                 {modifyOpen && statementLock?.locked && (
                   <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Modify statement">
@@ -2050,7 +2292,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   </div>
                 )}
                 <div className="statement-row-status" role="status">{statementRowStatus}</div>
-                <div ref={reportPreviewRef} className="report-preview" dangerouslySetInnerHTML={statementHtml} />
+                <div className="statement-preview-frame">
+                  {statementLock && !statementLock.locked && !statementLock.previouslySent && isAdmin && (
+                    <div className="status-pill draft statement-draft-badge">Draft, not sent</div>
+                  )}
+                  <div ref={reportPreviewRef} className="report-preview" dangerouslySetInnerHTML={statementHtml} />
+                </div>
               </section>
             )}
           </section>
@@ -2306,214 +2553,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         {tab === "expenses" && (
           <section className="split-view">
             {isAdmin && (
-              <form className="editor-panel compact" onSubmit={saveExpense}>
-                <div className="panel-heading">
-                  <CircleDollarSign size={20} />
-                  <h2>{expenseEditingId ? "Edit Expense" : "Add Expense"}</h2>
-                </div>
-                <div className="form-grid">
-                  <label>
-                    Apply expense to
-                    <select value={expenseForm.property} onChange={(event) => setExpenseForm({ ...expenseForm, property: event.target.value })} required>
-                      <option value="OWNER">Owner-level expense</option>
-                      {reportPropertyOptions.map((property) => (
-                        <option value={property} key={property}>
-                          {property}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Type
-                    <select
-                      value={expenseForm.type}
-                      onChange={(event) => {
-                        if (event.target.value === "__add_new__") {
-                          setExpenseTypeEditingId("");
-                          setExpenseTypeForm(emptyExpenseTypeForm);
-                          setManageExpenseLists(true);
-                          return;
-                        }
-                        setExpenseForm({ ...expenseForm, type: event.target.value });
-                      }}
-                      required
-                    >
-                      <option value="">Select type</option>
-                      {expenseTypes.map((expenseType) => (
-                        <option value={expenseType.name} key={expenseType._id}>
-                          {expenseType.name}
-                        </option>
-                      ))}
-                      <option value="__add_new__">+ Add new type</option>
-                    </select>
-                  </label>
-                  <label>
-                    Vendor
-                    <select
-                      value={expenseForm.vendor}
-                      onChange={(event) => {
-                        if (event.target.value === "__add_new__") {
-                          setVendorEditingId("");
-                          setVendorForm(emptyVendorForm);
-                          setManageExpenseLists(true);
-                          return;
-                        }
-                        setExpenseForm({ ...expenseForm, vendor: event.target.value });
-                      }}
-                    >
-                      <option value="">Select vendor</option>
-                      {vendors.map((vendor) => (
-                        <option value={vendor.name} key={vendor._id}>
-                          {vendor.name}
-                        </option>
-                      ))}
-                      <option value="__add_new__">+ Add new vendor</option>
-                    </select>
-                  </label>
-                  <label>
-                    Amount
-                    <input value={expenseForm.amount} onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })} inputMode="decimal" required />
-                  </label>
-                  <label>
-                    Month
-                    <select value={expenseForm.month} onChange={(event) => setExpenseForm({ ...expenseForm, month: event.target.value })}>
-                      {months.map((month, index) => (
-                        <option key={month} value={index + 1}>
-                          {month}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Year
-                    <input value={expenseForm.year} onChange={(event) => setExpenseForm({ ...expenseForm, year: event.target.value })} inputMode="numeric" />
-                  </label>
-                </div>
-                <button className="secondary-action small manage-lists-button" type="button" onClick={() => setManageExpenseLists((current) => !current)}>
-                  <SlidersHorizontal size={17} />
-                  {manageExpenseLists ? "Close type and vendor manager" : "Manage types and vendors"}
-                </button>
-                {manageExpenseLists && (
-                  <div className="expense-lookup-manager">
-                    <section>
-                      <div className="charge-heading">
-                        <strong>Types</strong>
-                        <button
-                          className="secondary-action small"
-                          type="button"
-                          onClick={() => {
-                            setExpenseTypeEditingId("");
-                            setExpenseTypeForm(emptyExpenseTypeForm);
-                          }}
-                        >
-                          <Plus size={16} />
-                          Add new
-                        </button>
-                      </div>
-                      <div className="lookup-editor-row">
-                        <input
-                          value={expenseTypeForm.name}
-                          onChange={(event) => setExpenseTypeForm({ name: event.target.value })}
-                          placeholder="Type name"
-                        />
-                        <button className="secondary-action small" type="button" onClick={saveExpenseType} disabled={!expenseTypeForm.name.trim() || busy === "expense-type"}>
-                          <Save size={16} />
-                          {expenseTypeEditingId ? "Update" : "Add"}
-                        </button>
-                      </div>
-                      <div className="lookup-list">
-                        {expenseTypes.map((expenseType) => (
-                          <div key={expenseType._id}>
-                            <span>{expenseType.name}</span>
-                            <div className="card-actions">
-                              <button className="icon-button" type="button" onClick={() => editExpenseType(expenseType)} title="Edit type">
-                                <Pencil size={16} />
-                              </button>
-                              <button className="icon-button danger" type="button" onClick={() => deleteExpenseType(expenseType._id)} title="Delete type">
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                    <section>
-                      <div className="charge-heading">
-                        <strong>Vendors</strong>
-                        <button
-                          className="secondary-action small"
-                          type="button"
-                          onClick={() => {
-                            setVendorEditingId("");
-                            setVendorForm(emptyVendorForm);
-                          }}
-                        >
-                          <Plus size={16} />
-                          Add new
-                        </button>
-                      </div>
-                      <div className="lookup-editor-row">
-                        <input
-                          value={vendorForm.name}
-                          onChange={(event) => setVendorForm({ ...vendorForm, name: event.target.value })}
-                          placeholder="Vendor name"
-                        />
-                        <button className="secondary-action small" type="button" onClick={saveVendor} disabled={!vendorForm.name.trim() || busy === "vendor"}>
-                          <Save size={16} />
-                          {vendorEditingId ? "Update" : "Add"}
-                        </button>
-                      </div>
-                      <div className="lookup-list">
-                        {vendors.map((vendor) => (
-                          <div key={vendor._id}>
-                            <span>{vendor.name}</span>
-                            <div className="card-actions">
-                              <button className="icon-button" type="button" onClick={() => editVendor(vendor)} title="Edit vendor">
-                                <Pencil size={16} />
-                              </button>
-                              <button className="icon-button danger" type="button" onClick={() => deleteVendor(vendor._id)} title="Delete vendor">
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  </div>
-                )}
-                <label>
-                  Notes
-                  <textarea value={expenseForm.notes} onChange={(event) => setExpenseForm({ ...expenseForm, notes: event.target.value })} />
-                </label>
-                <label>
-                  Invoice link
-                  <input value={expenseForm.invoiceUrl} onChange={(event) => setExpenseForm({ ...expenseForm, invoiceUrl: event.target.value })} />
-                </label>
-                {expenseEditingId && expenseForm.invoiceUrl && (
-                  <div className="inline-actions">
-                    <button className="secondary-action small" type="button" onClick={() => openInvoice(expenseForm.invoiceUrl)}>
-                      View current invoice
-                    </button>
-                    <button className="secondary-action small danger-text" type="button" onClick={() => setExpenseForm({ ...expenseForm, invoiceUrl: "" })}>
-                      Remove invoice
-                    </button>
-                  </div>
-                )}
-                <label className="file-pick">
-                  <Upload size={18} />
-                  <span>{expenseFile ? expenseFile.name : expenseEditingId ? "Replace invoice PDF/JPG" : "Upload invoice PDF/JPG"}</span>
-                  <input type="file" accept="image/*,application/pdf" onChange={(event) => setExpenseFile(event.target.files?.[0] || null)} />
-                </label>
-                <button className="primary-action" disabled={busy === "expense"}>
-                  <Save size={18} />
-                  {expenseEditingId ? "Update expense" : "Save expense"}
-                </button>
-                {expenseEditingId && (
-                  <button className="secondary-action" type="button" onClick={() => { setExpenseEditingId(""); setExpenseForm(emptyExpenseForm); setExpenseFile(null); }}>
-                    Clear
-                  </button>
-                )}
-              </form>
+              renderExpenseForm()
             )}
 
             {!expenseEditingId && (
@@ -2788,6 +2828,20 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           </section>
         )}
       </section>
+
+      {expenseDialogOpen && (
+        <dialog
+          ref={expenseDialogRef}
+          className="statement-expense-dialog"
+          aria-labelledby="statement-expense-title"
+          onCancel={(event) => {
+            event.preventDefault();
+            if (busy !== "expense") closeExpenseDialog();
+          }}
+        >
+          {renderExpenseForm(true)}
+        </dialog>
+      )}
 
       {statementEdit && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
