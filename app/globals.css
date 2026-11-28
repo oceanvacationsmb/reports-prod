@@ -909,8 +909,7 @@ select:disabled {
   max-width: 100%;
 }
 
-.statement-quick-actions,
-.statement-report-actions {
+.statement-quick-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -919,6 +918,10 @@ select:disabled {
 
 .statement-quick-actions {
   grid-column: 1 / -1;
+}
+
+.statement-report-actions {
+  display: contents;
 }
 
 .statement-quick-actions .secondary-action {
