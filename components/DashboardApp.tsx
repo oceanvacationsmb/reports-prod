@@ -368,6 +368,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [batchSkipped, setBatchSkipped] = useState<BatchRecipient[]>([]);
   const amountRefs = useRef<Array<HTMLInputElement | null>>([]);
   const reportPreviewRef = useRef<HTMLDivElement | null>(null);
+  const reportRequestId = useRef(0);
   const statementScroll = useRef<{ top: number; left: number } | null>(null);
   const [statementRowStatus, setStatementRowStatus] = useState("");
   const propertySettingsRef = useRef<HTMLFormElement | null>(null);
@@ -769,6 +770,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   }
 
   async function runReport(overrides?: { reportKey?: ReportKey; month?: string; preservePosition?: boolean }) {
+    const requestId = ++reportRequestId.current;
     const reportKey = overrides?.reportKey || reportForm.reportKey;
     const monthField = overrides?.month || reportForm.month;
     if (overrides) {
@@ -809,6 +811,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         method: "POST",
         body: JSON.stringify(body)
       });
+      if (requestId !== reportRequestId.current) return false;
       statementScroll.current = { top: window.scrollY, left: window.scrollX };
       setCurrentSavedReport(null);
       setGeneratedSelection(JSON.stringify([isAdmin ? selectedOwnerId : user.ownerId, { ...reportForm, reportKey, month: monthField }]));
@@ -832,10 +835,12 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       }
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to generate report.");
+      if (requestId === reportRequestId.current) {
+        setError(err instanceof Error ? err.message : "Unable to generate report.");
+      }
       return false;
     } finally {
-      setBusy("");
+      if (requestId === reportRequestId.current) setBusy("");
     }
   }
 
@@ -2055,7 +2060,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 Month
                 <select
                   value={reportRequiresFullYear ? "full-year" : reportForm.month}
-                  onChange={(event) => setReportForm({ ...reportForm, month: event.target.value })}
+                  onChange={(event) => {
+                    const month = event.target.value;
+                    if (reportForm.reportKey === "statement" && (isAdmin ? selectedOwnerId : user.ownerId)) {
+                      void runReport({ month });
+                    } else {
+                      setReportForm((current) => ({ ...current, month }));
+                    }
+                  }}
                   disabled={reportRequiresFullYear}
                   title={reportRequiresFullYear ? "The 1099 covers the full year." : undefined}
                 >
