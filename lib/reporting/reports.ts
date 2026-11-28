@@ -316,10 +316,15 @@ export function recurringExpenses(owner: OwnerLike, startDate: string, endDate: 
   });
 }
 
+function matchesGriListing(listing: string, selectedProperty: string) {
+  return sameProperty(listing, selectedProperty) ||
+    (sameProperty(selectedProperty, "MB - Tuscan C") && sameProperty(listing, "MB-TUS-CR"));
+}
+
 function filterRows(rows: NormalizedReservation[], request: ReportRequest, startDate: string, endDate: string) {
   return rows
     .filter((row) => {
-      const propertyOk = !request.property || (request.reportKey === "gri" ? sameProperty(row.property, request.property) : row.property === request.property);
+      const propertyOk = !request.property || (request.reportKey === "gri" ? matchesGriListing(row.property, request.property) : row.property === request.property);
       return propertyOk && inPeriod(row, startDate, endDate);
     })
     .sort((a, b) => {

@@ -179,3 +179,20 @@ describe("GRI property address", () => {
     assert.equal(row.listingAddress, guestyAddress);
   });
 });
+
+describe("GRI listing names", () => {
+  it("includes MB-TUS-CR in Unit C and keeps Tuscan B separate", () => {
+    const rows = [
+      stay("MB - Tuscan B"),
+      { ...stay("MB-TUS-CR"), totalPayout: 3010.33 },
+      stay("MB - Tuscan C")
+    ];
+    const request = { reportKey: "gri" as const, year: 2026 };
+    const unitC = buildOwnerReport(owner, rows, [], settings, { ...request, property: "MB - Tuscan C" });
+    const unitB = buildOwnerReport(owner, rows, [], settings, { ...request, property: "MB - Tuscan B" });
+    assert.equal(unitC.summary.reservations, 2);
+    assert.equal(Math.round(unitC.summary.grossPayout * 100), 597297);
+    assert.equal(unitB.summary.reservations, 1);
+    assert.equal(unitB.summary.grossPayout, 2962.64);
+  });
+});
