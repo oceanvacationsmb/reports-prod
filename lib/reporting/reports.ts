@@ -760,7 +760,7 @@ function griReservationTable(rows: CalculatedReservation[]) {
   `;
 }
 
-function griReportDocument(property: string, propertyAddress: string, rows: CalculatedReservation[], year: number, periodLabel: string, storedProperty?: PropertyLike) {
+function griReportDocument(property: string, propertyAddress: string, rows: CalculatedReservation[], period: ReturnType<typeof periodFromRequest>, storedProperty?: PropertyLike) {
   const grossPayout = rows.reduce((sum, row) => sum + row.grossPayout, 0);
   const reportDate = new Date().toLocaleDateString("en-US");
   const postal = postalAddressFromProperty({
@@ -779,12 +779,27 @@ function griReportDocument(property: string, propertyAddress: string, rows: Calc
   const title = street || displayAddress || property;
   return `
     <article class="report-document gri-document">
+      <header class="gri-print-header">
+        <div class="gri-print-brand">
+          <strong>OCEAN VACATIONS INC.</strong>
+          <span>www.oceanvacationsmb.com</span>
+          <span>oceanvacationsmb@gmail.com</span>
+          <span>843-222-6516</span>
+          <b>Gross Rental Income Report</b>
+        </div>
+        <dl>
+          <div><dt>Report date</dt><dd>${escapeHtml(reportDate)}</dd></div>
+          <div><dt>Report period</dt><dd>${escapeHtml(formatShortDate(period.startDate).replaceAll("-", "/"))} - ${escapeHtml(formatShortDate(period.endDate).replaceAll("-", "/"))}</dd></div>
+          <div><dt>Property address</dt><dd>${escapeHtml(displayAddress)}</dd></div>
+          <div><dt>Gross payout</dt><dd>${formatMoney(grossPayout)}</dd></div>
+        </dl>
+      </header>
       <header class="report-hero">
         <p>Ocean Vacations</p>
         <span class="gri-title-label">Gross Rental Income Report</span>
         ${locality ? `<span class="gri-locality">${escapeHtml(locality)}</span>` : ""}
         <h1 class="gri-street">${escapeHtml(title)}</h1>
-        <span>${escapeHtml(periodLabel)}</span>
+        <span>${escapeHtml(period.label)}</span>
         <div class="report-hero-details">
           <span>oceanvacationsmb@gmail.com</span>
           <span>843-222-6516</span>
@@ -1167,7 +1182,7 @@ export function buildOwnerReport(
     const property = request.property || reportRows[0]?.property || rows[0]?.property || "Property";
     const officialAddress = griPropertyAddress(property, properties, reportRows);
     const storedProperty = griStoredProperty(property, properties);
-    const body = griReportDocument(property, officialAddress, reportRows, request.year || new Date().getUTCFullYear(), period.label, storedProperty);
+    const body = griReportDocument(property, officialAddress, reportRows, period, storedProperty);
     return {
       title: officialAddress ? `${officialAddress} GRI Report` : "Gross Rental Income Report",
       periodLabel: period.label,

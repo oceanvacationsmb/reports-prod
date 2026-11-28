@@ -5,7 +5,6 @@ import {
   BarChart3,
   Building2,
   CircleDollarSign,
-  Ellipsis,
   Eye,
   FileArchive,
   Home,
@@ -31,6 +30,7 @@ import { AdminIncome } from "@/components/AdminIncome";
 import { OwnerPortal } from "@/components/OwnerPortal";
 import { SimpleReportsPage } from "@/components/SimpleReportsPage";
 import { TaxesPage } from "@/components/TaxesPage";
+import { ToolBox } from "@/components/ToolBox";
 import { JurisdictionSelect, JurisdictionSettings } from "@/components/JurisdictionSettings";
 import { batchConfirmCopy, batchResultTitle, type BatchRecipient } from "@/lib/owner-batch";
 import { reportPropertyChoices, reportYearChoices, sameProperty } from "@/lib/reporting/report-options";
@@ -142,16 +142,6 @@ type EmailDraft = {
   reportLink: string;
 };
 
-type StatementHistoryItem = {
-  who: string;
-  when: string;
-  action?: "modify" | "unlock" | "relock";
-  beforeRecurring: { label: string; amount: number }[];
-  afterRecurring: { label: string; amount: number }[];
-  beforeTotals?: { ownerPayout?: number; netAccommodation?: number };
-  afterTotals?: { ownerPayout?: number; netAccommodation?: number };
-};
-
 type StatementLockState = {
   ownerId: string;
   year: number;
@@ -163,7 +153,6 @@ type StatementLockState = {
   lockedAt: string;
   shareId: string;
   recurring: { label: string; amount: number }[];
-  history: StatementHistoryItem[];
 };
 
 type LockResponse = {
@@ -172,11 +161,10 @@ type LockResponse = {
   lockedAt?: string;
   shareId: string;
   recurring: { label: string; amount: number }[];
-  history: StatementHistoryItem[];
   report: ReportResponse;
 };
 
-type TabKey = "reports" | "taxes" | "simpleReports" | "income" | "owners" | "expenses" | "saved" | "settings" | "archive";
+type TabKey = "reports" | "taxes" | "simpleReports" | "income" | "owners" | "expenses" | "saved" | "settings" | "archive" | "taxSettings" | "toolSettings" | "toolbox";
 
 const reportOptions: { key: ReportKey; label: string; adminOnly?: boolean }[] = [
   { key: "statement", label: "Statement" },
@@ -350,6 +338,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [manageExpenseLists, setManageExpenseLists] = useState(false);
   const [reservationProperties, setReservationProperties] = useState<string[]>([]);
   const [currentReport, setCurrentReport] = useState<ReportResponse | null>(null);
+  const [generatedSelection, setGeneratedSelection] = useState("");
+  const reportSelection = JSON.stringify([isAdmin ? selectedOwnerId : user.ownerId, reportForm]);
+  const selectionChanged = Boolean(generatedSelection && generatedSelection !== reportSelection);
+  const statementHtml = useMemo(() => ({ __html: currentReport?.html || "" }), [currentReport?.html]);
   const [currentSavedReport, setCurrentSavedReport] = useState<SavedReport | null>(null);
   const [emailDraft, setEmailDraft] = useState<EmailDraft | null>(null);
   const [busy, setBusy] = useState("");
@@ -362,7 +354,6 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   const [fieldErrors, setFieldErrors] = useState<Record<number, string>>({});
   const [emailConfirm, setEmailConfirm] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [batchStep, setBatchStep] = useState<"loading" | "preview" | "confirm" | "result" | "error">("preview");
   const [batchError, setBatchError] = useState("");
   const [batchRecipients, setBatchRecipientsState] = useState<BatchRecipient[]>([]);
@@ -395,20 +386,6 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     () => savedReports.filter((report) => String(report.ownerId || "") === String(selectedOwner?._id || "")),
     [savedReports, selectedOwner]
   );
-
-  const tabs = [
-    { key: "reports" as const, label: "Statements", icon: BarChart3 },
-    { key: "simpleReports" as const, label: "Reports", icon: FileText },
-    ...(isAdmin ? [{ key: "settings" as const, label: "Settings", icon: Settings }] : []),
-    ...(isAdmin
-      ? [
-          { key: "owners" as const, label: "Owners", icon: Building2 },
-          { key: "archive" as const, label: "Archive properties", icon: FileArchive }
-        ]
-      : []),
-    { key: "expenses" as const, label: "Expenses", icon: CircleDollarSign },
-    { key: "saved" as const, label: "Saved", icon: FileArchive }
-  ];
 
   async function loadData() {
     setBusy("load");
@@ -767,9 +744,6 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     setError("");
     setEmailConfirm(false);
     if (!overrides?.preservePosition) {
-      setCurrentReport(null);
-      setCurrentSavedReport(null);
-      setStatementLock(null);
       setModifyOpen(false);
       setStatementRowStatus("");
     }
@@ -793,16 +767,13 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         lockedAt?: string;
         shareId?: string;
         recurring?: { label: string; amount: number }[];
-        history?: StatementHistoryItem[];
       }>("/api/reports", {
         method: "POST",
         body: JSON.stringify(body)
       });
-      if (overrides?.preservePosition) {
-        statementScroll.current = { top: window.scrollY, left: window.scrollX };
-        setCurrentSavedReport(null);
-        setStatementRowStatus("Statement row updated.");
-      }
+      statementScroll.current = { top: window.scrollY, left: window.scrollX };
+      setCurrentSavedReport(null);
+      setGeneratedSelection(JSON.stringify([isAdmin ? selectedOwnerId : user.ownerId, { ...reportForm, reportKey, month: monthField }]));
       setCurrentReport(data.report);
       if (reportKey === "statement" && month) {
         setStatementLock({
@@ -815,14 +786,16 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           sentAt: data.sentAt || "",
           lockedAt: data.lockedAt || "",
           shareId: data.shareId || "",
-          recurring: data.recurring || [],
-          history: data.history || []
+          recurring: data.recurring || []
         });
         setUnlockOpen(false);
+      } else {
+        setStatementLock(null);
       }
-      if (!overrides?.preservePosition) flash("Report generated.");
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to generate report.");
+      return false;
     } finally {
       setBusy("");
     }
@@ -978,6 +951,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
 
   function permanentShareId() {
     if (!statementLock?.locked || !statementLock.shareId) return "";
+    if (selectionChanged) return statementLock.shareId;
     if (reportForm.reportKey !== "statement" || reportForm.month === "full-year") return "";
     const ownerId = isAdmin ? selectedOwnerId : user.ownerId || "";
     if (statementLock.ownerId !== ownerId) return "";
@@ -1003,29 +977,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   }
 
-  function totalsChanged(entry: StatementHistoryItem) {
-    if (!entry.beforeTotals || !entry.afterTotals) return false;
-    return entry.beforeTotals.ownerPayout !== entry.afterTotals.ownerPayout || entry.beforeTotals.netAccommodation !== entry.afterTotals.netAccommodation;
-  }
-
-  function changedHistoryLines(entry: StatementHistoryItem) {
-    const labels = [...new Set([...entry.beforeRecurring.map((line) => line.label), ...entry.afterRecurring.map((line) => line.label)])];
-    return labels.flatMap((label) => {
-      const before = entry.beforeRecurring.find((line) => line.label === label)?.amount;
-      const after = entry.afterRecurring.find((line) => line.label === label)?.amount;
-      if (before === after) return [];
-      return [{ label, before, after }];
-    });
-  }
-
   function amountError(value: string) {
     return value.trim() !== "" && Number.isFinite(Number(value)) ? "" : "Enter an amount, like 150";
-  }
-
-  function formatWhen(value: string) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
   }
 
   async function downloadPdf() {
@@ -1081,8 +1034,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       });
       setUnlockOpen(false);
       setModifyOpen(false);
-      await runReport();
-      flash("Statement unlocked. The sent link is unchanged. Approve it again to lock the new snapshot.");
+      if (await runReport({ preservePosition: true })) {
+        flash("Statement unlocked. The sent link is unchanged. Approve it again to lock the new snapshot.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to unlock this statement.");
     } finally {
@@ -1119,6 +1073,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       setBusy("1099-all");
       setError("");
       const data = await api<{ html: string; report: { year: number } }>(`/api/ten-ninety-nine?year=${reportForm.year}`);
+      setGeneratedSelection("");
       setCurrentReport({
         title: `${reportForm.year} 1099 Report`,
         periodLabel: String(reportForm.year),
@@ -1176,14 +1131,14 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           recurring
         })
       });
+      statementScroll.current = { top: window.scrollY, left: window.scrollX };
       setCurrentReport(data.report);
       setStatementLock({
         ...statementLock,
         locked: true,
         lockedAt: data.lockedAt || statementLock.lockedAt,
         shareId: data.shareId,
-        recurring: data.recurring || recurring,
-        history: data.history || []
+        recurring: data.recurring || recurring
       });
       setModifyOpen(false);
       flash("Statement updated and locked again. The same link now shows this version.");
@@ -1229,6 +1184,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         });
         shareId = data.shareId;
         periodLabel = data.report.periodLabel;
+        statementScroll.current = { top: window.scrollY, left: window.scrollX };
         setCurrentReport(data.report);
         setStatementLock({
           ownerId: selectedOwnerId,
@@ -1237,8 +1193,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           locked: true,
           lockedAt: data.lockedAt || new Date().toISOString(),
           shareId: data.shareId,
-          recurring: data.recurring || [],
-          history: data.history || []
+          recurring: data.recurring || []
         });
         setModifyOpen(false);
         flash(data.created ? "Final statement saved. This link is now locked." : "This month is already final. The email uses the same link.");
@@ -1376,7 +1331,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         return;
       }
       await loadData();
-      await runReport({ preservePosition: true });
+      if (await runReport({ preservePosition: true })) setStatementRowStatus("Statement row updated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update statement row.");
     }
@@ -1439,7 +1394,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
       });
       setStatementEdit(null);
       await loadData();
-      await runReport({ preservePosition: true });
+      if (await runReport({ preservePosition: true })) setStatementRowStatus("Statement row updated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update statement row.");
     }
@@ -1566,7 +1521,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
   }
 
   function openTaxSettings(propertyName = "") {
-    setTab("settings");
+    setTab("taxSettings");
     if (propertyName) loadPropertySettings(propertyName);
     window.setTimeout(() => propertySettingsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
   }
@@ -1695,8 +1650,21 @@ export function DashboardApp({ user }: { user: SessionUser }) {
     )
     .sort((a, b) => a.property.localeCompare(b.property) || a.type.localeCompare(b.type));
   const reportIsAdminOnly = ["summary", "allOwnersTax"].includes(reportForm.reportKey);
-  const moreTabKeys = new Set(["expenses", "saved", "archive"]);
-  const reportSectionActive = tab === "simpleReports" || tab === "taxes" || tab === "income";
+  const reportSectionActive = ["simpleReports", "taxes", "income", "saved"].includes(tab);
+  const settingsSectionActive = ["settings", "owners", "archive", "taxSettings", "toolSettings"].includes(tab);
+  const navSections: { key: TabKey; label: string; icon: typeof Home; active: boolean; links: [TabKey, string][] }[] = [
+    { key: "reports", label: "Statements", icon: BarChart3, active: tab === "reports" || tab === "expenses",
+      links: [["reports", "Statements"], ["expenses", "Expenses"]] },
+    { key: "simpleReports", label: "Reports", icon: FileText, active: reportSectionActive,
+      links: [["simpleReports", "GRI"], ["taxes", "Taxes"], ...(isAdmin ? [["income", "Income"] as [TabKey, string]] : []), ["saved", "Saved"]] }
+  ];
+  if (isAdmin) {
+    navSections.push(
+      { key: "settings", label: "Settings", icon: Settings, active: settingsSectionActive,
+        links: [["owners", "Owners"], ["taxSettings", "Property taxes"], ["archive", "Archive properties"], ["toolSettings", "Tools Settings"], ["settings", "General"]] },
+      { key: "toolbox", label: "ToolBox", icon: Building2, active: tab === "toolbox", links: [] }
+    );
+  }
   const includedRecipients = batchRecipients.filter((recipient) => recipient.included);
   const skippedRecipients = [
     ...batchRecipients.filter((recipient) => !recipient.included),
@@ -1710,63 +1678,32 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           <Home size={22} />
           <span>Ocean</span>
         </div>
-        <nav aria-label="Dashboard">
-          {tabs.map((item) => {
-            const Icon = item.icon;
-            const active = tab === item.key || (item.key === "simpleReports" && reportSectionActive);
-            return (
-              <button
-                key={item.key}
-                className={`${active ? "active" : ""} ${moreTabKeys.has(item.key) ? "more-tab" : ""}`}
-                aria-current={active ? "page" : undefined}
-                onClick={() => {
-                  setMoreOpen(false);
-                  setTab(item.key);
-                }}
-              >
+        <nav className="dashboard-navigation" aria-label="Dashboard">
+          {navSections.map(({ key, label, icon: Icon, active, links }) => (
+            <div className="dashboard-nav-group" key={key}>
+              <button type="button" className={active ? "active" : ""} aria-expanded={links.length ? active : undefined} onClick={() => setTab(key)}>
                 <Icon size={18} />
-                <span>{item.label}</span>
+                <span>{label}</span>
               </button>
-            );
-          })}
-          <button
-            type="button"
-            className={`nav-more ${moreTabKeys.has(tab) ? "active" : ""}`}
-            aria-expanded={moreOpen}
-            onClick={() => setMoreOpen((open) => !open)}
-          >
-            <Ellipsis size={18} />
-            <span>More</span>
-          </button>
+              {active && links.length > 0 && (
+                <div className="dashboard-nav-submenu" role="group" aria-label={label}>
+                  {links.map(([link, title]) => (
+                    <button type="button" key={link} className={tab === link ? "active" : ""} aria-current={tab === link ? "page" : undefined} onClick={() => setTab(link)}>
+                      {title}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </nav>
-        {moreOpen && (
-          <div className="nav-more-panel">
-            {tabs.filter((item) => moreTabKeys.has(item.key)).map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={tab === item.key ? "active" : ""}
-                  onClick={() => {
-                    setMoreOpen(false);
-                    setTab(item.key);
-                  }}
-                >
-                  <Icon size={18} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
         <button className="logout-button" onClick={logout}>
           <LogOut size={18} />
           <span>Sign out</span>
         </button>
       </aside>
 
-      <section className="workspace">
+      <section className={tab === "reports" ? "workspace statement-workspace" : "workspace"}>
         <header className="topbar">
           <div>
             <span>{isAdmin ? "Admin" : "Owner"} workspace</span>
@@ -1781,7 +1718,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
             </h1>
           </div>
           <div className="topbar-actions">
-            {isAdmin && !reportSectionActive && tab !== "archive" && (
+            {isAdmin && (!reportSectionActive || tab === "saved") && tab !== "archive" && tab !== "toolbox" && tab !== "toolSettings" && (
               <select value={selectedOwnerId} onChange={(event) => setSelectedOwnerId(event.target.value)}>
                 <option value="">All owners</option>
                 {visibleOwners.map((owner) => (
@@ -1795,7 +1732,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
         </header>
 
         {(notice || error) && (
-          <div className={error ? "message error" : "message"}>
+          <div className={`message${error ? " error" : ""}${tab === "reports" ? " statement-toast" : ""}`} role={error ? "alert" : "status"}>
             {error || notice}
             <button onClick={() => (error ? setError("") : setNotice(""))} aria-label="Close message">
               <X size={16} />
@@ -1803,26 +1740,8 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           </div>
         )}
 
-        {reportSectionActive && (
-          <nav className="report-section-nav" aria-label="Reports">
-            {([
-              ["simpleReports", "GRI"],
-              ["taxes", "Taxes"],
-              ...(isAdmin ? [["income", "Income"]] as const : [])
-            ] as const).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={tab === key ? "primary-action" : "secondary-action"}
-                aria-current={tab === key ? "page" : undefined}
-                onClick={() => setTab(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
-        )}
-
+        {tab === "toolbox" && isAdmin && <ToolBox key="toolbox" />}
+        {tab === "toolSettings" && isAdmin && <ToolBox key="settings" edit />}
         {tab === "taxes" && <TaxesPage />}
 
         {tab === "simpleReports" && (
@@ -1923,10 +1842,24 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 <BarChart3 size={18} />
                 {busy === "report" ? "Generating..." : "Generate"}
               </button>
+              {isAdmin && (
+                <button type="button" className="secondary-action" disabled={!selectedOwnerId} onClick={() => {
+                  setExpenseEditingId("");
+                  setExpenseFile(null);
+                  setExpenseForm({
+                    ...emptyExpenseForm,
+                    month: reportForm.month === "full-year" ? emptyExpenseForm.month : reportForm.month,
+                    year: reportForm.year
+                  });
+                  setTab("expenses");
+                }}>
+                  <Plus size={18} /> Add expense
+                </button>
+              )}
             </form>
 
             {currentReport && (
-              <section className="report-stage">
+              <section className="report-stage" inert={busy === "report" || selectionChanged}>
                 <div className="report-toolbar">
                   <div className="report-actions">
                     {reportForm.reportKey === "statement" && !permanentShareId() && (
@@ -1988,7 +1921,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     )}
                   </div>
                 </div>
-                {statementMatches() && statementLock?.locked && (
+                {statementLock?.locked && (
                   <div className="message statement-lock">
                     <div className="status-pill final">
                       <Lock size={16} aria-hidden="true" />
@@ -2010,68 +1943,36 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   </div>
                 )}
                 {unlockOpen && statementMatches() && statementLock?.locked && (
-                  <form className="editor-panel" onSubmit={(event) => void unlockStatement(event)}>
-                    <h2>Unlock this statement?</h2>
-                    <div className="message error" role="alert">
-                      <span>This statement was already sent to the owner. The sent link stays as it is. Unlocking lets you edit and recalculate, then approve a new snapshot. The earlier totals stay in the audit.</span>
-                    </div>
-                    <div className="inline-actions">
-                      <button className="secondary-action" type="button" onClick={() => setUnlockOpen(false)}>Cancel</button>
-                      <button className="primary-action" type="submit" disabled={busy === "unlock"}>
-                        {busy === "unlock" ? "Unlocking..." : "Unlock statement"}
-                      </button>
-                    </div>
-                  </form>
+                  <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Unlock statement">
+                    <form className="editor-panel statement-action-dialog" onSubmit={(event) => void unlockStatement(event)}>
+                      <h2>Unlock this statement?</h2>
+                      <div className="message error" role="alert">
+                        <span>This statement was already sent to the owner. The sent link stays as it is. Unlocking lets you edit and recalculate, then approve a new snapshot. The earlier totals stay in the audit.</span>
+                      </div>
+                      <div className="inline-actions">
+                        <button className="secondary-action" type="button" onClick={() => setUnlockOpen(false)}>Cancel</button>
+                        <button className="primary-action" type="submit" disabled={busy === "unlock"}>
+                          {busy === "unlock" ? "Unlocking..." : "Unlock statement"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
                 )}
                 {emailConfirm && statementMatches() && statementLock && !statementLock.locked && (
-                  <form className="editor-panel email-confirm" onSubmit={(event) => { event.preventDefault(); void sendOwnerEmail(); }}>
-                    <h2>Email {ownerShortName(selectedOwner?.name)} and lock {months[Number(reportForm.month) - 1]}?</h2>
-                    <p>You can still modify later; each change is recorded.</p>
-                    <div className="inline-actions">
-                      <button className="secondary-action" type="button" onClick={() => setEmailConfirm(false)}>Cancel</button>
-                      <button className="primary-action" type="submit" disabled={busy === "email"}>
-                        {busy === "email" ? "Saving..." : `Email ${ownerShortName(selectedOwner?.name)} and lock`}
-                      </button>
-                    </div>
-                  </form>
+                  <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Email and lock statement">
+                    <form className="editor-panel statement-action-dialog email-confirm" onSubmit={(event) => { event.preventDefault(); void sendOwnerEmail(); }}>
+                      <h2>Email {ownerShortName(selectedOwner?.name)} and lock {months[Number(reportForm.month) - 1]}?</h2>
+                      <p>You can still modify later; each change is recorded.</p>
+                      <div className="inline-actions">
+                        <button className="secondary-action" type="button" onClick={() => setEmailConfirm(false)}>Cancel</button>
+                        <button className="primary-action" type="submit" disabled={busy === "email"}>
+                          {busy === "email" ? "Saving..." : `Email ${ownerShortName(selectedOwner?.name)} and lock`}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
                 )}
-                {statementMatches() && statementLock && statementLock.history.length > 0 && (
-                  <section className="editor-panel statement-history" aria-label="Earlier versions">
-                    <div className="panel-heading">
-                      <h2>Earlier versions</h2>
-                    </div>
-                    {statementLock.history.map((entry) => {
-                      const changes = changedHistoryLines(entry);
-                      return (
-                        <div key={`${entry.when}-${entry.who}-${entry.action || "modify"}`}>
-                          <p><strong>{formatWhen(entry.when)}</strong> by {entry.who}. {entry.action === "unlock" ? "Unlocked" : entry.action === "relock" ? "Locked again" : "Modified"}.</p>
-                          {entry.beforeTotals && entry.afterTotals && totalsChanged(entry) && (
-                            <p className="helper-line">Owner payout {money(entry.beforeTotals.ownerPayout || 0)} to {money(entry.afterTotals.ownerPayout || 0)}. Net accommodation {money(entry.beforeTotals.netAccommodation || 0)} to {money(entry.afterTotals.netAccommodation || 0)}.</p>
-                          )}
-                          {changes.length === 0 ? (
-                            <p className="history-unchanged">No amounts changed.</p>
-                          ) : (
-                          <div className="table-wrap">
-                            <table className="history-table">
-                              <thead><tr><th>Line</th><th>Before</th><th>After</th></tr></thead>
-                              <tbody>
-                                {changes.map((row) => (
-                                  <tr key={row.label}>
-                                    <td>{row.label}</td>
-                                    <td>{row.before == null ? <span className="history-dash">—</span> : money(row.before)}</td>
-                                    <td>{row.after == null ? <span className="history-dash">—</span> : money(row.after)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </section>
-                )}
-                {statementMatches() && statementLock && !statementLock.locked && isAdmin && (
+                {statementLock && !statementLock.locked && isAdmin && (
                   statementLock.previouslySent ? (
                     <div className="message statement-lock">
                       <div className="status-pill draft">Unlocked. Edit this month, then approve it to lock a new snapshot.</div>
@@ -2082,72 +1983,74 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   )
                 )}
                 {modifyOpen && statementLock?.locked && (
-                  <form className="editor-panel statement-modify" onSubmit={saveModification}>
-                    <div className="panel-heading">
-                      <Pencil size={18} />
-                      <h2>Modify this final statement</h2>
-                    </div>
-                    <p className="muted-copy">Saving does not email the owner again. The same link updates, and this version stays in Earlier versions.</p>
-                    {modifyLines.length === 0 && <p className="muted-copy">No lines yet. Add a charge, or save to clear this month&apos;s fees.</p>}
-                    {modifyLines.map((line, index) => (
-                      <div className="modify-line" key={index}>
-                        <label>
-                          Description
-                          <input
-                            value={line.label}
-                            onChange={(event) =>
-                              setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item)))
-                            }
-                          />
-                        </label>
-                        <label>
-                          Amount
-                          <span className={fieldErrors[index] ? "amount-field invalid" : "amount-field"}>
-                            <span aria-hidden="true">$</span>
+                  <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Modify statement">
+                    <form className="editor-panel statement-action-dialog statement-modify" onSubmit={saveModification}>
+                      <div className="panel-heading">
+                        <Pencil size={18} />
+                        <h2>Modify this final statement</h2>
+                      </div>
+                      <p className="muted-copy">Saving does not email the owner again. The same link updates, and the change is recorded.</p>
+                      {modifyLines.length === 0 && <p className="muted-copy">No lines yet. Add a charge, or save to clear this month&apos;s fees.</p>}
+                      {modifyLines.map((line, index) => (
+                        <div className="modify-line" key={index}>
+                          <label>
+                            Description
                             <input
-                              ref={(node) => { amountRefs.current[index] = node; }}
-                              value={line.amount}
-                              inputMode="decimal"
-                              aria-invalid={fieldErrors[index] ? "true" : "false"}
-                              aria-describedby={fieldErrors[index] ? `modify-amount-error-${index}` : undefined}
-                              onChange={(event) => {
-                                setFieldErrors((current) => {
-                                  if (!current[index]) return current;
-                                  const next = { ...current };
-                                  delete next[index];
-                                  return next;
-                                });
-                                setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, amount: event.target.value } : item)));
-                              }}
+                              value={line.label}
+                              onChange={(event) =>
+                                setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item)))
+                              }
                             />
-                          </span>
-                          {fieldErrors[index] && <span className="field-error" id={`modify-amount-error-${index}`}>{fieldErrors[index]}</span>}
-                        </label>
-                        <button
-                          className="secondary-action"
-                          type="button"
-                          onClick={() => setModifyLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                        >
-                          Remove
+                          </label>
+                          <label>
+                            Amount
+                            <span className={fieldErrors[index] ? "amount-field invalid" : "amount-field"}>
+                              <span aria-hidden="true">$</span>
+                              <input
+                                ref={(node) => { amountRefs.current[index] = node; }}
+                                value={line.amount}
+                                inputMode="decimal"
+                                aria-invalid={fieldErrors[index] ? "true" : "false"}
+                                aria-describedby={fieldErrors[index] ? `modify-amount-error-${index}` : undefined}
+                                onChange={(event) => {
+                                  setFieldErrors((current) => {
+                                    if (!current[index]) return current;
+                                    const next = { ...current };
+                                    delete next[index];
+                                    return next;
+                                  });
+                                  setModifyLines((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, amount: event.target.value } : item)));
+                                }}
+                              />
+                            </span>
+                            {fieldErrors[index] && <span className="field-error" id={`modify-amount-error-${index}`}>{fieldErrors[index]}</span>}
+                          </label>
+                          <button
+                            className="secondary-action"
+                            type="button"
+                            onClick={() => setModifyLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      <div className="inline-actions">
+                        <button className="secondary-action" type="button" onClick={() => { setModifyOpen(false); setFieldErrors({}); }}>
+                          Cancel
+                        </button>
+                        <button className="secondary-action" type="button" onClick={() => setModifyLines((current) => [...current, { label: "", amount: "" }])}>
+                          <Plus size={16} />
+                          Add line
+                        </button>
+                        <button className="primary-action" type="submit" disabled={busy === "modify"}>
+                          {busy === "modify" ? "Saving..." : "Save and lock again"}
                         </button>
                       </div>
-                    ))}
-                    <div className="inline-actions">
-                      <button className="secondary-action" type="button" onClick={() => { setModifyOpen(false); setFieldErrors({}); }}>
-                        Cancel
-                      </button>
-                      <button className="secondary-action" type="button" onClick={() => setModifyLines((current) => [...current, { label: "", amount: "" }])}>
-                        <Plus size={16} />
-                        Add line
-                      </button>
-                      <button className="primary-action" type="submit" disabled={busy === "modify"}>
-                        {busy === "modify" ? "Saving..." : "Save and lock again"}
-                      </button>
-                    </div>
-                  </form>
+                    </form>
+                  </div>
                 )}
                 <div className="statement-row-status" role="status">{statementRowStatus}</div>
-                <div ref={reportPreviewRef} className="report-preview" dangerouslySetInnerHTML={{ __html: currentReport.html }} />
+                <div ref={reportPreviewRef} className="report-preview" dangerouslySetInnerHTML={statementHtml} />
               </section>
             )}
           </section>
@@ -2228,32 +2131,6 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   <input value={ownerForm.cleaningFee} onChange={(event) => setOwnerForm({ ...ownerForm, cleaningFee: event.target.value })} inputMode="decimal" />
                 </label>
               </div>
-              {ownerForm.type === "payout" && (
-                <div className="fee-editor owner-tax-settings">
-                  <div className="panel-heading small">
-                    <MapPinned size={18} />
-                    <h3>Property taxes</h3>
-                  </div>
-                  <p className="muted-copy">Set the tax groups used for this payout owner when a property does not have its own tax setting.</p>
-                  <div className="flag-row">
-                    {ownerTaxFlagOptions.map((flag) => (
-                      <label key={flag}>
-                        <input
-                          type="checkbox"
-                          checked={ownerForm.taxFlags.has(flag)}
-                          onChange={(event) => {
-                            const next = new Set(ownerForm.taxFlags);
-                            if (event.target.checked) next.add(flag);
-                            else next.delete(flag);
-                            setOwnerForm({ ...ownerForm, taxFlags: next });
-                          }}
-                        />
-                        {flag}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
               <label>
                 Guesty report URL
                 <input value={ownerForm.guestyReportUrl} onChange={(event) => setOwnerForm({ ...ownerForm, guestyReportUrl: event.target.value })} />
@@ -2721,9 +2598,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
           </section>
         )}
 
-        {tab === "settings" && isAdmin && (
-          <section className="split-view">
-            <form className="editor-panel compact" onSubmit={saveSettings}>
+        {(tab === "settings" || tab === "taxSettings") && isAdmin && (
+          <section className="split-view single-view">
+            {tab === "settings" && <form className="editor-panel compact" onSubmit={saveSettings}>
               <div className="panel-heading">
                 <Settings size={20} />
                 <h2>App Settings</h2>
@@ -2751,9 +2628,10 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                 <Save size={18} />
                 Save settings
               </button>
-            </form>
+            </form>}
 
             <div className="settings-stack">
+              {tab === "taxSettings" && <>
               <JurisdictionSettings />
               <form className="editor-panel compact" onSubmit={saveProperty} ref={propertySettingsRef}>
                 <div className="panel-heading">
@@ -2869,8 +2747,9 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                   ))}
                 </div>
               </form>
+              </>}
 
-              <form className="editor-panel compact" onSubmit={saveVendor}>
+              {tab === "settings" && <form className="editor-panel compact" onSubmit={saveVendor}>
                 <div className="panel-heading">
                   <CircleDollarSign size={20} />
                   <h2>{vendorEditingId ? "Edit Vendor" : "Vendors"}</h2>
@@ -2904,7 +2783,7 @@ export function DashboardApp({ user }: { user: SessionUser }) {
                     </button>
                   ))}
                 </div>
-              </form>
+              </form>}
             </div>
           </section>
         )}

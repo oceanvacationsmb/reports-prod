@@ -507,6 +507,143 @@ select:disabled {
   align-items: center;
 }
 
+.statement-workspace button:hover,
+.statement-workspace button:active {
+  transform: none;
+}
+
+.statement-toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 45;
+  max-width: min(480px, calc(100vw - 32px));
+}
+
+.statement-action-dialog {
+  width: min(720px, 100%);
+  max-height: min(90vh, 850px);
+  overflow: auto;
+}
+
+.dashboard-nav-group {
+  min-width: 0;
+}
+
+.dashboard-nav-submenu {
+  display: grid;
+  gap: 2px;
+  padding: 3px 0 6px 20px;
+}
+
+.side-nav .dashboard-nav-submenu button {
+  display: block;
+  min-height: 34px;
+  padding: 4px 10px;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.toolbox-list {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.toolbox-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gri-print-header {
+  display: none;
+}
+
+@media screen and (max-width: 760px) {
+  .app-shell:has(.dashboard-nav-submenu) {
+    padding-bottom: 126px;
+  }
+
+  .side-nav .dashboard-nav-group {
+    flex: 1 1 0;
+  }
+
+  .side-nav .dashboard-nav-group > button {
+    width: 100%;
+  }
+
+  .dashboard-nav-submenu {
+    position: fixed;
+    bottom: 74px;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 6px 8px;
+    background: #0b2422;
+  }
+}
+
+@media print {
+  .gri-document:has(.gri-print-header) > :is(.report-hero, .metric-grid) {
+    display: none;
+  }
+
+  .gri-document .gri-print-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr);
+    gap: 20pt;
+    margin: 0 0 10pt;
+    padding: 0 0 8pt;
+    border-bottom: 1px solid #243e36;
+    break-inside: avoid;
+    font: 9pt/1.3 Arial, Helvetica, sans-serif;
+  }
+
+  .gri-print-brand {
+    display: grid;
+    align-content: start;
+    gap: 2pt;
+  }
+
+  .gri-print-brand strong {
+    color: var(--jade);
+    font-size: 10pt;
+  }
+
+  .gri-print-header dl,
+  .gri-print-header dd {
+    margin: 0;
+  }
+
+  .gri-print-header dl > div {
+    display: grid;
+    grid-template-columns: 76pt minmax(0, 1fr);
+    gap: 6pt;
+    padding-bottom: 3pt;
+  }
+
+  .gri-print-header dt,
+  .gri-print-header dl > div:last-child dd {
+    font-weight: 700;
+  }
+
+  .gri-document .property-section,
+  .gri-document .table-wrap,
+  .gri-document table {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .gri-document thead {
+    display: table-header-group;
+  }
+}
+
 .statement-lock .message-body {
   display: grid;
   gap: 4px;

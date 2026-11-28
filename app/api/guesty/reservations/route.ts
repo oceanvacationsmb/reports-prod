@@ -21,6 +21,9 @@ export async function GET(req: NextRequest) {
       property: req.nextUrl.searchParams.get("property") || undefined,
       allProperties: req.nextUrl.searchParams.get("allProperties") === "true"
     });
+    if (req.nextUrl.searchParams.get("propertiesOnly") === "true") {
+      return ok({ properties: [...new Set(rows.map((row) => row.property).filter(Boolean))] });
+    }
     return ok({ rows: asPlain(rows) });
   } catch (error) {
     return fail(error);

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Download, Printer } from "lucide-react";
-import { isGriProperty, reportYearChoices } from "@/lib/reporting/report-options";
+import { reportPropertyChoices, reportYearChoices, sameProperty } from "@/lib/reporting/report-options";
+import { ownerReportReservationQuery } from "@/lib/reporting/reservation-query";
 
 type OwnerChoice = {
   _id: string;
@@ -17,7 +18,7 @@ type GeneratedReport = {
   ownerId: string;
 };
 
-const reportChoices = [{ key: "gri", label: "Gross Rental Income (GRI)" }];
+const reportKey = "gri";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -31,9 +32,10 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function SimpleReportsPage({ owners, onEditOwner }: { owners: OwnerChoice[]; onEditOwner: (ownerId: string) => void }) {
   const years = reportYearChoices();
-  const [reportKey, setReportKey] = useState(reportChoices[0].key);
   const [ownerId, setOwnerId] = useState("");
-  const [property, setProperty] = useState("");
+  const [selectedProperty, setProperty] = useState("");
+  const [discoveredProperties, setDiscoveredProperties] = useState<string[]>([]);
+  const [lookupBusy, setLookupBusy] = useState(false);
   const [year, setYear] = useState(years.defaultYear);
   const [report, setReport] = useState<GeneratedReport | null>(null);
   const [busy, setBusy] = useState("");
@@ -41,12 +43,33 @@ export function SimpleReportsPage({ owners, onEditOwner }: { owners: OwnerChoice
 
   const owner = owners.find((item) => item._id === ownerId);
   const properties = useMemo(() => {
-    const names = (owner?.properties || []).map((name) => name.trim()).filter(isGriProperty);
-    return [...new Set(names)].sort((left, right) => left.localeCompare(right, "en", { numeric: true, sensitivity: "base" }));
-  }, [owner]);
+    const names: string[] = [];
+    for (const name of reportPropertyChoices(owner?.properties || [], discoveredProperties)) {
+      if (!names.some((existing) => sameProperty(existing, name))) names.push(name);
+    }
+    return names;
+  }, [owner, discoveredProperties]);
+  const property = properties.length === 1 ? properties[0] : selectedProperty;
+
+  useEffect(() => {
+    if (!ownerId || owner?.properties?.some((name) => name.trim())) return;
+    const controller = new AbortController();
+    const query = ownerReportReservationQuery(Number(year));
+    const params = new URLSearchParams({
+      ownerId, allProperties: "true", propertiesOnly: "true", startDate: query.startDate, endDate: query.endDate,
+      limit: String(query.limit)
+    });
+    api<{ properties: string[] }>(`/api/guesty/reservations?${params}`, { signal: controller.signal })
+      .then(({ properties }) => setDiscoveredProperties(reportPropertyChoices(properties)))
+      .catch((err) => { if (!controller.signal.aborted) setError(err.message); })
+      .finally(() => { if (!controller.signal.aborted) setLookupBusy(false); });
+    return () => controller.abort();
+  }, [owner, ownerId, year]);
 
   function chooseOwner(nextOwnerId: string) {
     setOwnerId(nextOwnerId);
+    setDiscoveredProperties([]);
+    setLookupBusy(!owners.find((item) => item._id === nextOwnerId)?.properties?.some((name) => name.trim()) && Boolean(nextOwnerId));
     setProperty("");
     setReport(null);
     setError("");
@@ -112,24 +135,6 @@ export function SimpleReportsPage({ owners, onEditOwner }: { owners: OwnerChoice
     <section className="view-band">
       <form className="control-grid screen-controls simple-report-form" onSubmit={generate}>
         <label>
-          Report
-          <select
-            value={reportKey}
-            onChange={(event) => {
-              setReportKey(event.target.value);
-              setReport(null);
-              setError("");
-            }}
-          >
-            {reportChoices.map((choice) => (
-              <option key={choice.key} value={choice.key}>
-                {choice.label}
-              </option>
-            ))}
-          </select>
-          <span className="field-hint">Gross rental income is the first report. More can be added later.</span>
-        </label>
-        <label>
           Owner
           <select value={ownerId} onChange={(event) => chooseOwner(event.target.value)}>
             <option value="">Choose an owner</option>
@@ -139,48 +144,36 @@ export function SimpleReportsPage({ owners, onEditOwner }: { owners: OwnerChoice
               </option>
             ))}
           </select>
-          {!ownerId && <span className="field-hint">Choose an owner. The properties assigned to that owner load next.</span>}
-          {ownerId && properties.length > 0 && <span className="field-hint">{owner?.name} is selected.</span>}
         </label>
-        <label>
-          Property
-          <select
-            value={property}
-            disabled={!ownerId || properties.length === 0}
-            onChange={(event) => {
+        {ownerId && properties.length === 1 ? (
+          <label>Property<input readOnly value={property} /></label>
+        ) : (
+          <label>
+            Property
+            <select value={property} disabled={!properties.length} onChange={(event) => {
               setProperty(event.target.value);
               setReport(null);
               setError("");
-            }}
-          >
-            <option value="">{ownerId ? (properties.length ? "Choose a property" : "No properties assigned") : "Choose an owner first"}</option>
-            {properties.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-          {ownerId && properties.length === 0 && (
-            <span className="field-notice">
-              No properties are assigned to {owner?.name}.{" "}
-              <button type="button" className="text-action" onClick={() => onEditOwner(ownerId)}>
-                Assign properties on this owner
-              </button>
-            </span>
-          )}
-          {ownerId && properties.length > 0 && !property && (
-            <span className="field-hint">
-              {properties.length === 1 ? "1 property assigned." : `${properties.length} properties assigned.`} Choose one, then generate.
-            </span>
-          )}
-          {property && !report && busy !== "report" && <span className="field-hint">Ready to generate {property}.</span>}
-        </label>
+            }}>
+              <option value="">{lookupBusy ? "Looking up properties…" : properties.length ? "Choose a property" : "No properties found"}</option>
+              {properties.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+            {ownerId && !lookupBusy && !properties.length && (
+              <button type="button" className="text-action" onClick={() => onEditOwner(ownerId)}>Assign properties</button>
+            )}
+          </label>
+        )}
         <label>
           Year
           <select
             value={year}
             onChange={(event) => {
               setYear(event.target.value);
+              if (ownerId && !owner?.properties?.some((name) => name.trim())) {
+                setDiscoveredProperties([]);
+                setProperty("");
+                setLookupBusy(true);
+              }
               setReport(null);
             }}
           >
@@ -190,7 +183,6 @@ export function SimpleReportsPage({ owners, onEditOwner }: { owners: OwnerChoice
               </option>
             ))}
           </select>
-          <span className="field-hint">The report covers this whole year.</span>
         </label>
         <div className="simple-report-generate">
           <button className="primary-action" disabled={generateDisabled}>
